@@ -14,6 +14,8 @@ Phase 3 adds the permanent provider-neutral context DAG: canonical JSON, domain-
 
 Phase 4 adds incremental SSE decoding and canonical adapters for Anthropic Messages, OpenAI Chat Completions, and OpenAI Responses. Streaming and non-streaming calls feed the same durable DAG without owning transport backpressure. Retained complete raw captures can be reparsed idempotently with `npm run replay -- <request-id>` after a build.
 
+Phase 5 adds the bounded versioned inspection API, Prometheus metrics, sequenced live invalidation events, separately gated raw downloads, and the bundled production UI. The responsive workspace includes live activity, cursor-filtered requests, durable transcripts and lineages, request/raw inspectors, statistics, and storage health. Credentials remain in process memory only; raw bodies are never part of ordinary transcript rendering.
+
 ## Run
 
 ```bash

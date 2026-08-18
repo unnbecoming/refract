@@ -308,6 +308,7 @@ describe('fixed-route transport', () => {
       recent: [],
       durable: { available: true, startupFailed: false, recoveredRequests: 0 },
       raw: { enabled: false, available: false, startupFailed: false },
+      events: { clients: 0, dropped: 0, sequence: 0 },
     });
     expect(addresses.admin.port).not.toBe(addresses.data.port);
   });

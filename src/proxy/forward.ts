@@ -40,6 +40,7 @@ export function createForwarder(
   lifecycle: LifecycleTracker,
   rawStore: () => RawCaptureStore | null = () => null,
   durableStore: () => DurableStore | null = () => null,
+  notify: (type: string, data: Record<string, unknown>) => void = () => undefined,
 ): Forwarder {
   const httpAgent = new http.Agent({ keepAlive: true });
   const httpsAgent = new https.Agent({ keepAlive: true });
@@ -88,6 +89,7 @@ export function createForwarder(
         maximumBodyBytes: config.parserMaxBodyBytes,
         durable: durableStore,
         raw: rawStore,
+        notify,
       });
       let responseStarted = false;
       let downstreamFinished = false;

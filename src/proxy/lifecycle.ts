@@ -35,8 +35,17 @@ const FINAL_STATES = new Set<LifecycleState>([
 ]);
 
 export class LifecycleTracker {
+  readonly #onChange: ((record: Omit<LifecycleRecord, 'acceptedAtMono'>) => void) | null;
   readonly #active = new Map<string, LifecycleRecord>();
   readonly #recent: LifecycleRecord[] = [];
+
+  constructor(onChange: ((record: Omit<LifecycleRecord, 'acceptedAtMono'>) => void) | null = null) { this.#onChange = onChange; }
+
+  #emit(record: LifecycleRecord): void {
+    const { acceptedAtMono, ...safe } = record;
+    void acceptedAtMono;
+    this.#onChange?.(safe);
+  }
 
   accept(provider: Provider, surface: ApiSurface): LifecycleRecord {
     const record: LifecycleRecord = {
@@ -49,6 +58,7 @@ export class LifecycleTracker {
       updatedAtMs: Date.now(),
     };
     this.#active.set(record.id, record);
+    this.#emit(record);
     return { ...record };
   }
 
@@ -63,6 +73,7 @@ export class LifecycleTracker {
     } else {
       this.#active.set(id, next);
     }
+    this.#emit(next);
     return { ...next };
   }
 

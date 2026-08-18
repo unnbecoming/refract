@@ -40,6 +40,7 @@ export interface ExchangeObservationInput {
   maximumBodyBytes: number;
   durable: () => DurableStore | null;
   raw: () => RawCaptureStore | null;
+  notify?: (type: string, data: Record<string, unknown>) => void;
 }
 
 interface CompletionInput {
@@ -199,7 +200,7 @@ export class ExchangeObservation {
       };
       if (this.#status) failure.httpStatus = this.#status;
       if (this.#ttfbMs) failure.ttfbMs = this.#ttfbMs;
-      return durable.markParseFailure(failure);
+      return durable.markParseFailure(failure).then(() => this.#input.notify?.('canonical_failed', { requestId: this.#input.request.id, errorCode }));
     }).catch(() => undefined);
   }
 
@@ -228,6 +229,7 @@ export class ExchangeObservation {
         rawCaptureState: captureState,
         knownSecrets: this.#input.knownSecrets,
       });
+      this.#input.notify?.('canonical_completed', { requestId: this.#input.request.id });
     } catch (error) {
       const code = error instanceof Error && error.message === 'observer_body_limit' ? 'body_limit' : 'adapter_parse_failed';
       const captureState = await rawState(this.#input.request.id, this.#input.raw()).catch(() => 'unavailable');
@@ -243,7 +245,7 @@ export class ExchangeObservation {
         requestBytes: this.#requestBody.totalBytes,
         responseBytes: this.#responseBody.totalBytes,
         rawCaptureState: captureState,
-      }).catch(() => undefined);
+      }).then(() => this.#input.notify?.('canonical_failed', { requestId: this.#input.request.id, errorCode: code })).catch(() => undefined);
     }
   }
 }

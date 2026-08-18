@@ -40,7 +40,10 @@ interface DirectionState {
 
 export interface RawExchangeRow {
   request_id: string;
+  created_at_ms: number;
+  provider: Provider;
   capture_state: RawCaptureState;
+  capture_error: string | null;
   request_complete: number;
   response_complete: number;
   request_bytes: number;
@@ -90,6 +93,9 @@ export class RawCaptureStore {
   #tail: Promise<void> = Promise.resolve();
   #pending = 0;
   #writeFailures = 0;
+  #agePruned = 0;
+  #emergencyPruned = 0;
+  #lastPrune: { atMs: number; durationMs: number; ageDeleted: number; emergencyDeleted: number } | null = null;
   readonly #drops: Partial<Record<RawCaptureState, number>> = {};
 
   constructor(config: RawStoreConfig) {
@@ -187,11 +193,58 @@ export class RawCaptureStore {
   async getExchange(requestId: string): Promise<RawExchangeRow | undefined> {
     await this.flush();
     const db = await this.#db;
-    return db.get<RawExchangeRow>(`SELECT request_id, capture_state, request_complete, response_complete,
-      request_bytes, response_bytes, response_status, request_sha256, response_sha256 FROM raw_exchanges WHERE request_id = ?`, requestId);
+    return db.get<RawExchangeRow>(`SELECT request_id, created_at_ms, provider, capture_state, capture_error,
+      request_complete, response_complete, request_bytes, response_bytes, response_status,
+      request_sha256, response_sha256 FROM raw_exchanges WHERE request_id = ?`, requestId);
+  }
+
+  async manifest(requestId: string): Promise<(RawExchangeRow & { requestHeaders: HeaderPair[]; responseHeaders: HeaderPair[] }) | undefined> {
+    await this.flush();
+    const db = await this.#db;
+    const row = await db.get<RawExchangeRow & { request_headers_zstd: Buffer | null; response_headers_zstd: Buffer | null }>(`SELECT
+      request_id, created_at_ms, provider, capture_state, capture_error, request_complete, response_complete,
+      request_bytes, response_bytes, response_status, request_sha256, response_sha256,
+      request_headers_zstd, response_headers_zstd FROM raw_exchanges WHERE request_id = ?`, requestId);
+    if (!row) return undefined;
+    const decode = async (value: Buffer | null): Promise<HeaderPair[]> => value
+      ? JSON.parse(Buffer.from(await decompress(value)).toString('utf8')) as HeaderPair[]
+      : [];
+    const { request_headers_zstd, response_headers_zstd, ...metadata } = row;
+    return { ...metadata, requestHeaders: await decode(request_headers_zstd), responseHeaders: await decode(response_headers_zstd) };
+  }
+
+  async retainedStates(requestIds: readonly string[]): Promise<Map<string, RawCaptureState>> {
+    if (requestIds.length === 0) return new Map();
+    if (requestIds.length > 100) throw new Error('too_many_request_ids');
+    await this.flush();
+    const db = await this.#db;
+    const rows = await db.all<Array<{ request_id: string; capture_state: RawCaptureState }>>(
+      `SELECT request_id, capture_state FROM raw_exchanges WHERE request_id IN (${requestIds.map(() => '?').join(',')})`,
+      ...requestIds,
+    );
+    return new Map(rows.map((row) => [row.request_id, row.capture_state]));
+  }
+
+  async retentionStatus(): Promise<Record<string, unknown>> {
+    await this.flush();
+    const db = await this.#db;
+    const range = await db.get<{ oldest: number | null; newest: number | null; retained: number }>(`SELECT
+      min(created_at_ms) AS oldest, max(created_at_ms) AS newest, count(*) AS retained FROM raw_exchanges`);
+    const pageSize = await db.get<{ page_size: number }>('PRAGMA page_size');
+    const pages = await db.get<{ page_count: number }>('PRAGMA page_count');
+    const free = await db.get<{ freelist_count: number }>('PRAGMA freelist_count');
+    return {
+      retentionHours: this.#config.retentionHours,
+      oldestRetainedAtMs: range?.oldest ?? null,
+      newestRetainedAtMs: range?.newest ?? null,
+      retained: range?.retained ?? 0,
+      usedBytes: ((pages?.page_count ?? 0) - (free?.freelist_count ?? 0)) * (pageSize?.page_size ?? 0),
+      lastPrune: this.#lastPrune,
+    };
   }
 
   async prune(nowMs = Date.now()): Promise<{ ageDeleted: number; emergencyDeleted: number }> {
+    const startedAt = Date.now();
     await this.flush();
     let ageDeleted = 0;
     let emergencyDeleted = 0;
@@ -218,11 +271,14 @@ export class RawCaptureStore {
       if (count === 0 || await usedBytes() <= this.#config.targetDbBytes) break;
     }
     await db.exec('PRAGMA incremental_vacuum(64)');
+    this.#agePruned += ageDeleted;
+    this.#emergencyPruned += emergencyDeleted;
+    this.#lastPrune = { atMs: Date.now(), durationMs: Date.now() - startedAt, ageDeleted, emergencyDeleted };
     return { ageDeleted, emergencyDeleted };
   }
 
-  stats(): { pendingWrites: number; writeFailures: number; drops: Partial<Record<RawCaptureState, number>> } {
-    return { pendingWrites: this.#pending, writeFailures: this.#writeFailures, drops: { ...this.#drops } };
+  stats(): { pendingWrites: number; writeFailures: number; agePruned: number; emergencyPruned: number; drops: Partial<Record<RawCaptureState, number>> } {
+    return { pendingWrites: this.#pending, writeFailures: this.#writeFailures, agePruned: this.#agePruned, emergencyPruned: this.#emergencyPruned, drops: { ...this.#drops } };
   }
 
   async close(): Promise<void> {

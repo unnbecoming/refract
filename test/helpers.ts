@@ -21,6 +21,7 @@ export function testConfig(origin: URL, adminToken: Buffer | null = null): Refra
     sensitiveHeaders: [],
     durablePath: ':memory:',
     parserMaxBodyBytes: 1024 * 1024,
+    rawDownloadEnabled: false,
     raw: null,
     timeouts: { upstreamHeadersMs: 1_000, upstreamIdleMs: 1_000, shutdownGraceMs: 1_000 },
   };

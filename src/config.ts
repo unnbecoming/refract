@@ -47,6 +47,7 @@ export interface RefractConfig {
   sensitiveHeaders: string[];
   durablePath: string;
   parserMaxBodyBytes: number;
+  rawDownloadEnabled: boolean;
   raw: RawCaptureConfig | null;
   timeouts: TimeoutConfig;
 }
@@ -67,6 +68,7 @@ const environment = z.object({
   SENSITIVE_HEADER_NAMES: z.string().default(''),
   DURABLE_DB_PATH: z.string().min(1).default('/var/lib/refract/observability.db'),
   PARSER_MAX_BODY_BYTES: positiveInteger.default(16 * 1024 * 1024),
+  RAW_DOWNLOAD_ENABLED: z.enum(['true', 'false']).default('false'),
   RAW_CAPTURE_ENABLED: z.enum(['true', 'false']).default('true'),
   RAW_DB_PATH: z.string().min(1).default('/var/cache/refract/raw.db'),
   RAW_RETENTION_HOURS: z.coerce.number().positive().default(168),
@@ -131,6 +133,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): RefractConf
     sensitiveHeaders: [...new Set(parsed.SENSITIVE_HEADER_NAMES.split(',').map((name) => name.trim().toLowerCase()).filter(Boolean))],
     durablePath: parsed.DURABLE_DB_PATH,
     parserMaxBodyBytes: parsed.PARSER_MAX_BODY_BYTES,
+    rawDownloadEnabled: parsed.RAW_DOWNLOAD_ENABLED === 'true',
     raw: parsed.RAW_CAPTURE_ENABLED === 'false' ? null : {
       path: parsed.RAW_DB_PATH,
       retentionHours: parsed.RAW_RETENTION_HOURS,

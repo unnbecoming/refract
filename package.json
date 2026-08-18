@@ -19,7 +19,7 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test",
+    "test:e2e": "npm run build && playwright test",
     "check": "npm run typecheck && npm run lint && npm test && npm run build",
     "replay": "node dist/server/src/replay.js"
   },
@@ -50,6 +50,7 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.4",
+    "axe-core": "^4.13.0",
     "eslint": "^9.39.4",
     "eslint-plugin-jsx-a11y": "^6.10.2",
     "eslint-plugin-react-hooks": "^7.0.1",
