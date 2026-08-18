@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: agent-llm-routing
+  labels:
+    app.kubernetes.io/name: restricted-agent
+data:
+  OPENAI_BASE_URL: http://refract-proxy:8340/v1
+  ANTHROPIC_BASE_URL: http://refract-proxy:8340

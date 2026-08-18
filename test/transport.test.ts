@@ -289,6 +289,68 @@ describe('fixed-route transport', () => {
     });
   });
 
+  test('bounds declared and chunked request bodies without contacting or completing upstream', async () => {
+    let contacts = 0;
+    const upstream = http.createServer((incoming, response) => { contacts += 1; incoming.resume(); incoming.on('end', () => response.end('{}')); });
+    openServers.push(upstream);
+    const origin = await listen(upstream);
+    const config = testConfig(origin);
+    config.limits.maxRequestBodyBytes = 8;
+    const proxy = createRefractServer(config);
+    openRefract.push(proxy);
+    const addresses = await proxy.start();
+    const endpoint = new URL('/v1/responses', `http://127.0.0.1:${addresses.data.port}`);
+    expect((await request(endpoint, { method: 'POST', body: Buffer.alloc(9) })).status).toBe(413);
+    expect(contacts).toBe(0);
+
+    const status = await new Promise<number>((resolve, reject) => {
+      const outgoing = http.request(endpoint, { method: 'POST', headers: { 'transfer-encoding': 'chunked' } }, (incoming) => { incoming.resume(); incoming.once('end', () => resolve(incoming.statusCode ?? 0)); });
+      outgoing.once('error', reject);
+      outgoing.write(Buffer.alloc(5));
+      outgoing.end(Buffer.alloc(5));
+    });
+    expect(status).toBe(413);
+    expect(proxy.lifecycle.snapshot().recent[0]).toMatchObject({ state: 'downstream_cancelled', errorCode: 'REQUEST_BODY_LIMIT' });
+  });
+
+  test('rejects concurrency saturation without disturbing the active stream', async () => {
+    let release: (() => void) | undefined;
+    const hold = new Promise<void>((resolve) => { release = resolve; });
+    const upstream = http.createServer((incoming, response) => { incoming.resume(); void hold.then(() => response.end('{}')); });
+    openServers.push(upstream);
+    const origin = await listen(upstream);
+    const config = testConfig(origin);
+    config.limits.maxConcurrentRequests = 1;
+    const proxy = createRefractServer(config);
+    openRefract.push(proxy);
+    const addresses = await proxy.start();
+    const endpoint = new URL('/v1/responses', `http://127.0.0.1:${addresses.data.port}`);
+    const first = request(endpoint, { method: 'POST', body: Buffer.from('{}') });
+    for (let index = 0; index < 100 && proxy.lifecycle.activeCount === 0; index += 1) await new Promise((resolve) => setTimeout(resolve, 2));
+    const saturated = await request(endpoint, { method: 'POST', body: Buffer.from('{}') });
+    expect(saturated.status).toBe(503);
+    expect(values(saturated.rawHeaders, 'retry-after')).toEqual(['1']);
+    release?.();
+    expect((await first).status).toBe(200);
+  });
+
+  test('keeps forwarding readiness healthy when the durable recorder cannot start', async () => {
+    const upstream = http.createServer((_incoming, response) => response.end('{}'));
+    openServers.push(upstream);
+    const origin = await listen(upstream);
+    const config = testConfig(origin);
+    config.durablePath = '/dev/null/refract.db';
+    const proxy = createRefractServer(config);
+    openRefract.push(proxy);
+    const addresses = await proxy.start();
+    const admin = `http://127.0.0.1:${addresses.admin.port}`;
+    const ready = await request(new URL('/health/ready', admin));
+    expect(ready.status).toBe(200);
+    expect(JSON.parse(ready.body.toString())).toEqual({ status: 'ready', recorder: 'degraded' });
+    expect((await request(new URL('/health/recording', admin))).status).toBe(503);
+    expect((await request(new URL('/v1/responses', `http://127.0.0.1:${addresses.data.port}`), { method: 'POST', body: Buffer.from('{}') })).status).toBe(200);
+  });
+
   test('binds a separate admin listener with health and bearer-gated state', async () => {
     const upstream = http.createServer((_incoming, response) => response.end('{}'));
     openServers.push(upstream);

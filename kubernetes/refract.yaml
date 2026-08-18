@@ -1,0 +1,105 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: refract-durable
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: refract
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: refract
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: refract
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 45
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: refract
+          image: ghcr.io/example/refract:replace-with-digest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: data, containerPort: 8340 }
+            - { name: admin, containerPort: 8341 }
+          env:
+            - { name: DATA_HOST, value: 0.0.0.0 }
+            - { name: ADMIN_HOST, value: 0.0.0.0 }
+            - { name: ANTHROPIC_ORIGIN, value: https://api.anthropic.com }
+            - { name: OPENAI_ORIGIN, value: https://api.openai.com }
+            - { name: ANTHROPIC_API_KEY_FILE, value: /run/secrets/refract/anthropic-api-key }
+            - { name: OPENAI_API_KEY_FILE, value: /run/secrets/refract/openai-api-key }
+            - { name: ADMIN_TOKEN_FILE, value: /run/secrets/refract/admin-token }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: "2", memory: 1Gi }
+          startupProbe:
+            httpGet: { path: /health/live, port: admin }
+            failureThreshold: 30
+            periodSeconds: 2
+          livenessProbe:
+            httpGet: { path: /health/live, port: admin }
+            periodSeconds: 10
+          readinessProbe:
+            httpGet: { path: /health/ready, port: admin }
+            periodSeconds: 5
+          lifecycle:
+            preStop:
+              exec: { command: ["/bin/sh", "-c", "sleep 5"] }
+          volumeMounts:
+            - { name: durable, mountPath: /var/lib/refract }
+            - { name: raw, mountPath: /var/cache/refract }
+            - { name: tmp, mountPath: /tmp }
+            - { name: credentials, mountPath: /run/secrets/refract, readOnly: true }
+      volumes:
+        - name: durable
+          persistentVolumeClaim: { claimName: refract-durable }
+        - name: raw
+          emptyDir: { sizeLimit: 3Gi }
+        - name: tmp
+          emptyDir: { sizeLimit: 64Mi }
+        - name: credentials
+          secret:
+            secretName: refract-provider-credentials
+            defaultMode: 0400
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: refract-proxy
+spec:
+  selector: { app.kubernetes.io/name: refract }
+  ports:
+    - { name: data, port: 8340, targetPort: data }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: refract-admin
+spec:
+  selector: { app.kubernetes.io/name: refract }
+  ports:
+    - { name: admin, port: 8341, targetPort: admin }

@@ -62,6 +62,18 @@ export function createForwarder(
       }
 
       const { route } = resolution;
+      if (lifecycle.activeCount >= config.limits.maxConcurrentRequests) {
+        request.resume();
+        response.setHeader('retry-after', '1');
+        sendLocalError(response, 503, 'CONCURRENCY_LIMIT');
+        return;
+      }
+      const contentLength = request.headers['content-length'];
+      if (contentLength !== undefined && (!/^\d+$/.test(contentLength) || Number(contentLength) > config.limits.maxRequestBodyBytes)) {
+        request.resume();
+        sendLocalError(response, 413, 'REQUEST_BODY_LIMIT');
+        return;
+      }
       const record = lifecycle.accept(route.provider, route.surface);
       const client = route.origin.protocol === 'https:' ? https : http;
       const authority = route.origin.host;
@@ -94,6 +106,8 @@ export function createForwarder(
       let responseStarted = false;
       let downstreamFinished = false;
       let upstreamResponse: http.IncomingMessage | null = null;
+      let observedRequestBytes = 0;
+      let requestLimited = false;
 
       const upstreamRequest = client.request({
         protocol: route.origin.protocol,
@@ -143,7 +157,21 @@ export function createForwarder(
         incoming.pipe(response);
       });
 
-      request.on('data', (chunk: Buffer) => { rawCapture?.observe('request', chunk); observation.requestChunk(chunk); });
+      request.on('data', (chunk: Buffer) => {
+        if (requestLimited) return;
+        observedRequestBytes += chunk.length;
+        if (observedRequestBytes > config.limits.maxRequestBodyBytes) {
+          requestLimited = true;
+          rawCapture?.partial();
+          track(observation.fail('downstream_cancelled', 'REQUEST_BODY_LIMIT', lifecycle.elapsed(record.id) ?? 0));
+          lifecycle.transition(record.id, 'downstream_cancelled', { totalMs: lifecycle.elapsed(record.id) ?? 0, errorCode: 'REQUEST_BODY_LIMIT' });
+          upstreamRequest.destroy();
+          sendLocalError(response, 413, 'REQUEST_BODY_LIMIT');
+          return;
+        }
+        rawCapture?.observe('request', chunk);
+        observation.requestChunk(chunk);
+      });
       request.once('end', () => rawCapture?.complete('request'));
       lifecycle.transition(record.id, 'upstream_started');
       const headersTimer = setTimeout(() => {

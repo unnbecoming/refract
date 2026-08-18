@@ -2,7 +2,8 @@ import * as fs from 'node:fs';
 import * as http from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import Database from 'better-sqlite3';
+import { open } from 'sqlite';
+import sqlite3 from 'sqlite3';
 import { afterEach, describe, expect, test } from 'vitest';
 import { createRefractServer, type RefractServer } from '../src/proxy/server.js';
 import { close, listen, request, testConfig } from './helpers.js';
@@ -80,8 +81,8 @@ describe('wired raw capture', () => {
     const proxy = createRefractServer(config);
     proxies.push(proxy);
     const addresses = await proxy.start();
-    const locker = new Database(config.raw!.path);
-    locker.exec('BEGIN IMMEDIATE');
+    const locker = await open({ filename: config.raw!.path, driver: sqlite3.Database });
+    await locker.exec('BEGIN IMMEDIATE');
     try {
       const started = performance.now();
       const result = await request(new URL('/v1/responses', `http://127.0.0.1:${addresses.data.port}`), { method: 'POST', body: Buffer.from('{}') });
@@ -90,8 +91,8 @@ describe('wired raw capture', () => {
       expect(elapsed).toBeLessThan(100);
       expect(proxy.raw?.stats().pendingWrites).toBeGreaterThan(0);
     } finally {
-      locker.exec('ROLLBACK');
-      locker.close();
+      await locker.exec('ROLLBACK');
+      await locker.close();
     }
     await proxy.raw?.flush();
     expect(proxy.raw?.stats().pendingWrites).toBe(0);

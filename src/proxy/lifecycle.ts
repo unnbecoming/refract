@@ -86,6 +86,8 @@ export class LifecycleTracker {
     return this.#active.has(id);
   }
 
+  get activeCount(): number { return this.#active.size; }
+
   snapshot(): { active: LifecycleRecord[]; recent: LifecycleRecord[] } {
     return {
       active: [...this.#active.values()].map((record) => ({ ...record })),

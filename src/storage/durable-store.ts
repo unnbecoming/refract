@@ -504,6 +504,7 @@ export class DurableStore {
 
   async close(): Promise<void> {
     await this.#tail;
+    await this.#db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
     await this.#db.close();
   }
 }

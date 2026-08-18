@@ -23,6 +23,7 @@ export function testConfig(origin: URL, adminToken: Buffer | null = null): Refra
     parserMaxBodyBytes: 1024 * 1024,
     rawDownloadEnabled: false,
     raw: null,
+    limits: { maxConcurrentRequests: 32, maxRequestBodyBytes: 1024 * 1024, maxHeaderBytes: 32 * 1024, maxConnections: 128 },
     timeouts: { upstreamHeadersMs: 1_000, upstreamIdleMs: 1_000, shutdownGraceMs: 1_000 },
   };
 }

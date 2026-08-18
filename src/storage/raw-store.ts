@@ -284,6 +284,7 @@ export class RawCaptureStore {
   async close(): Promise<void> {
     await this.flush();
     const db = await this.#db;
+    await db.exec('PRAGMA wal_checkpoint(TRUNCATE)');
     await db.close();
   }
 }

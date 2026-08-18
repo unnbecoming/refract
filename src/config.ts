@@ -27,6 +27,13 @@ export interface TimeoutConfig {
   shutdownGraceMs: number;
 }
 
+export interface ResourceLimits {
+  maxConcurrentRequests: number;
+  maxRequestBodyBytes: number;
+  maxHeaderBytes: number;
+  maxConnections: number;
+}
+
 export interface RawCaptureConfig {
   path: string;
   retentionHours: number;
@@ -49,6 +56,7 @@ export interface RefractConfig {
   parserMaxBodyBytes: number;
   rawDownloadEnabled: boolean;
   raw: RawCaptureConfig | null;
+  limits: ResourceLimits;
   timeouts: TimeoutConfig;
 }
 
@@ -79,6 +87,10 @@ const environment = z.object({
   RAW_MAX_EXCHANGE_BYTES: positiveInteger.default(64 * 1024 * 1024),
   RAW_BLOCK_BYTES: positiveInteger.default(256 * 1024),
   RAW_MAX_QUEUED_WRITES: positiveInteger.default(256),
+  MAX_CONCURRENT_REQUESTS: positiveInteger.default(128),
+  MAX_REQUEST_BODY_BYTES: positiveInteger.default(64 * 1024 * 1024),
+  MAX_HEADER_BYTES: positiveInteger.default(32 * 1024),
+  MAX_CONNECTIONS: positiveInteger.default(1024),
   UPSTREAM_HEADERS_TIMEOUT_MS: milliseconds.default(30_000),
   UPSTREAM_IDLE_TIMEOUT_MS: milliseconds.default(120_000),
   SHUTDOWN_GRACE_MS: milliseconds.default(30_000),
@@ -144,6 +156,12 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): RefractConf
       maxExchangeBytes: parsed.RAW_MAX_EXCHANGE_BYTES,
       blockBytes: parsed.RAW_BLOCK_BYTES,
       maxQueuedWrites: parsed.RAW_MAX_QUEUED_WRITES,
+    },
+    limits: {
+      maxConcurrentRequests: parsed.MAX_CONCURRENT_REQUESTS,
+      maxRequestBodyBytes: parsed.MAX_REQUEST_BODY_BYTES,
+      maxHeaderBytes: parsed.MAX_HEADER_BYTES,
+      maxConnections: parsed.MAX_CONNECTIONS,
     },
     timeouts: {
       upstreamHeadersMs: parsed.UPSTREAM_HEADERS_TIMEOUT_MS,

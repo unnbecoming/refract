@@ -16,6 +16,8 @@ Phase 4 adds incremental SSE decoding and canonical adapters for Anthropic Messa
 
 Phase 5 adds the bounded versioned inspection API, Prometheus metrics, sequenced live invalidation events, separately gated raw downloads, and the bundled production UI. The responsive workspace includes live activity, cursor-filtered requests, durable transcripts and lineages, request/raw inspectors, statistics, and storage health. Credentials remain in process memory only; raw bodies are never part of ordinary transcript rendering.
 
+Phase 6 adds explicit transport limits, recorder-independent readiness, checkpointed graceful drain/recovery, repeatable soak acceptance, a non-root read-only multi-architecture container, and a separate-Pod Kubernetes deployment with split storage, Secret file mounts, distinct Services, and default-deny NetworkPolicies. See `kubernetes/README.md` before applying the namespace-wide policy.
+
 ## Run
 
 ```bash

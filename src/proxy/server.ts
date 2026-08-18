@@ -112,7 +112,8 @@ export function createRefractServer(config: RefractConfig): RefractServer {
   const forwarder = createForwarder(config, lifecycle, () => raw, () => durable, (type, data) => events.publish(type, data));
   let closing = false;
   let pruneTimer: NodeJS.Timeout | null = null;
-  const dataServer = http.createServer((request, response) => forwarder.handle(request, response));
+  const serverOptions: http.ServerOptions = { maxHeaderSize: config.limits.maxHeaderBytes, requestTimeout: config.timeouts.upstreamIdleMs };
+  const dataServer = http.createServer(serverOptions, (request, response) => forwarder.handle(request, response));
   const adminApi = createAdminApi({
     config,
     lifecycle,
@@ -122,15 +123,18 @@ export function createRefractServer(config: RefractConfig): RefractServer {
     durableStatus: () => ({ startupFailed: durableStartupFailed, recoveredRequests }),
     rawStatus: () => ({ startupFailed: rawStartupFailed }),
   });
-  const adminServer = http.createServer((request, response) => {
+  const adminServer = http.createServer(serverOptions, (request, response) => {
     const pathname = request.url?.split('?', 1)[0];
     if (request.method === 'GET' && pathname === '/health/live') {
       json(response, 200, { status: 'live' });
       return;
     }
     if (request.method === 'GET' && pathname === '/health/ready') {
-      const ready = !closing && durable !== null;
-      json(response, ready ? 200 : 503, { status: closing ? 'draining' : ready ? 'ready' : 'degraded' });
+      json(response, closing ? 503 : 200, { status: closing ? 'draining' : 'ready', recorder: durable ? 'healthy' : 'degraded' });
+      return;
+    }
+    if (request.method === 'GET' && pathname === '/health/recording') {
+      json(response, durable ? 200 : 503, { status: durable ? 'healthy' : 'degraded' });
       return;
     }
     if (request.method === 'GET' && pathname && serveUi(pathname, response)) return;
@@ -151,6 +155,8 @@ export function createRefractServer(config: RefractConfig): RefractServer {
     });
   });
 
+  dataServer.maxConnections = config.limits.maxConnections;
+  adminServer.maxConnections = config.limits.maxConnections;
   dataServer.on('clientError', (_error, socket) => {
     socket.end('HTTP/1.1 400 Bad Request\r\nConnection: close\r\n\r\n');
   });

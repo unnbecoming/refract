@@ -24,6 +24,8 @@ jobs:
       - run: npm ci
       - run: npm run check
       - run: npm audit --audit-level=high
+      - run: docker build -t refract:ci .
+      - run: npm run test:container
 
   browser:
     runs-on: ubuntu-latest

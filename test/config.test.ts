@@ -36,6 +36,7 @@ describe('configuration', () => {
       expect(config.durablePath).toBe('/var/lib/refract/observability.db');
       expect(config.parserMaxBodyBytes).toBe(16 * 1024 * 1024);
       expect(config.rawDownloadEnabled).toBe(false);
+      expect(config.limits).toEqual({ maxConcurrentRequests: 128, maxRequestBodyBytes: 64 * 1024 * 1024, maxHeaderBytes: 32 * 1024, maxConnections: 1024 });
       expect(config.raw).toMatchObject({ retentionHours: 168, blockBytes: 256 * 1024, maxQueuedWrites: 256 });
     } finally {
       fixture.cleanup();
