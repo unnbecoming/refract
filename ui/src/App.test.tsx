@@ -63,6 +63,22 @@ describe('Refract UI', () => {
     expect(await screen.findByText('Retention')).toBeInTheDocument();
   });
 
+  test('does not offer a dead raw-inspector action when downloads are disabled', async () => {
+    vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => {
+      const url = requestUrl(input);
+      if (url.startsWith('/api/v1/events')) return Promise.resolve(eventStream());
+      if (url.endsWith('/transcript')) return Promise.resolve(json({ requestId: 'req_1', tailId: null, items: [] }));
+      if (url.startsWith('/api/v1/lineages/')) return Promise.resolve(json({ requestId: 'req_1', items: [] }));
+      if (url === '/api/v1/requests/req_1') return Promise.resolve(json({ id: 'req_1', state: 'completed', raw_state: 'retained', raw_download_enabled: false, occurrences: [] }));
+      return Promise.resolve(json({ error: { code: 'not_found' } }, 404));
+    }));
+    render(<MemoryRouter initialEntries={['/requests/req_1']}><App /></MemoryRouter>);
+    fireEvent.click(await screen.findByRole('tab', { name: 'Raw opt-in' }));
+    expect(await screen.findByRole('heading', { name: 'Raw inspector unavailable' })).toBeInTheDocument();
+    expect(screen.getByText(/disabled by the operator/i)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Open raw inspector' })).not.toBeInTheDocument();
+  });
+
   test('shows a truthful empty request-browser state', async () => {
     vi.stubGlobal('fetch', vi.fn((input: RequestInfo | URL) => requestUrl(input).startsWith('/api/v1/events')
       ? Promise.resolve(eventStream())

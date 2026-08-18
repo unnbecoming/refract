@@ -135,7 +135,7 @@ function RequestDetail() {
     <div id={`panel-${tab}`} role="tabpanel" aria-labelledby={`tab-${tab}`}>
       {tab === 'transcript' ? <QueryState loading={transcript.loading} error={transcript.error} empty={!transcript.data?.items.length}><TranscriptView items={transcript.data?.items ?? []} /></QueryState> : null}
       {tab === 'overview' ? <QueryState loading={detail.loading || lineage.loading} error={detail.error ?? lineage.error} empty={!detail.data}><Overview detail={detail.data ?? {}} lineage={lineage.data?.items ?? []} /></QueryState> : null}
-      {tab === 'raw' ? <RawInspector requestId={id} state={detail.data?.raw_state} /> : null}
+      {tab === 'raw' ? <RawInspector requestId={id} state={detail.data?.raw_state} downloadEnabled={detail.data?.raw_download_enabled} /> : null}
     </div>
   </section>;
 }
@@ -181,7 +181,15 @@ function Overview({ detail, lineage }: { detail: Record<string, Json>; lineage: 
   return <div className="inspector-grid"><section className="panel"><h2>Request</h2><dl>{fields.map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{label === 'TTFB' || label === 'Total' ? formatDuration(value) : display(value ?? '—')}</dd></div>)}</dl></section><section className="panel"><h2>Lineage</h2>{lineage.map((row) => <NavLink className="lineage-row" key={display(row.id)} to={`/requests/${display(row.id)}`}><span>{display(row.id)}</span><small>{display(row.lineage_source ?? 'root')}</small></NavLink>)}</section><section className="panel wide"><h2>Canonical occurrences</h2><pre>{JSON.stringify(detail.occurrences ?? [], null, 2)}</pre></section></div>;
 }
 
-function RawInspector({ requestId, state }: { requestId: string; state: Json }) {
+function rawUnavailableReason(state: Json, downloadEnabled: Json): string | null {
+  if (downloadEnabled === false) return 'Raw downloads are disabled by the operator for this deployment.';
+  if (state === 'disabled') return 'Raw capture is disabled for this deployment.';
+  if (state === 'expired') return 'Raw capture expired or is no longer retained.';
+  if (state === 'unavailable' || state === 'not_retained') return 'No raw capture is available for this request.';
+  return null;
+}
+
+function RawInspector({ requestId, state, downloadEnabled }: { requestId: string; state: Json; downloadEnabled: Json }) {
   const api = useApi();
   const [enabled, setEnabled] = useState(false);
   const manifest = useApiQuery<Record<string, Json>>(enabled ? `/api/v1/raw/${encodeURIComponent(requestId)}` : null);
@@ -189,6 +197,8 @@ function RawInspector({ requestId, state }: { requestId: string; state: Json }) 
     const blob = await api.download(`/api/v1/raw/${encodeURIComponent(requestId)}?direction=${direction}`);
     const url = URL.createObjectURL(blob); const anchor = document.createElement('a'); anchor.href = url; anchor.download = `${requestId}-${direction}.bin`; anchor.click(); URL.revokeObjectURL(url);
   };
+  const unavailable = rawUnavailableReason(state, downloadEnabled);
+  if (unavailable) return <div className="raw-consent"><h2>Raw inspector unavailable</h2><p>State: <strong>{display(state)}</strong>. {unavailable}</p></div>;
   if (!enabled) return <div className="raw-consent"><h2>Raw capture is separate sensitive data</h2><p>State: <strong>{display(state ?? 'unknown')}</strong>. Opening this view reads short-retention headers and enables exact body downloads. Raw data never enters transcripts or browser storage.</p><button onClick={() => setEnabled(true)}>Open raw inspector</button></div>;
   return <QueryState loading={manifest.loading} error={manifest.error} empty={!manifest.data}><div className="inspector-grid"><section className="panel"><h2>Retention</h2><dl><div><dt>State</dt><dd>{display(manifest.data?.raw_state)}</dd></div><div><dt>Retained until</dt><dd>{formatTime(manifest.data?.retained_until_ms ?? null)}</dd></div><div><dt>Request bytes</dt><dd>{formatNumber(manifest.data?.request_bytes ?? null)}</dd></div><div><dt>Response bytes</dt><dd>{formatNumber(manifest.data?.response_bytes ?? null)}</dd></div><div><dt>Request SHA-256</dt><dd className="mono">{display(manifest.data?.request_sha256 ?? '—')}</dd></div><div><dt>Response SHA-256</dt><dd className="mono">{display(manifest.data?.response_sha256 ?? '—')}</dd></div></dl><div className="button-row"><button disabled={manifest.data?.request_complete !== 1} onClick={() => void save('request')}>Download request</button><button disabled={manifest.data?.response_complete !== 1} onClick={() => void save('response')}>Download response</button></div></section><section className="panel"><h2>Sanitized headers</h2><h3>Request</h3><pre>{JSON.stringify(manifest.data?.requestHeaders ?? [], null, 2)}</pre><h3>Response</h3><pre>{JSON.stringify(manifest.data?.responseHeaders ?? [], null, 2)}</pre></section></div></QueryState>;
 }

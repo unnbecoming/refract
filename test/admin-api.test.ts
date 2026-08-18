@@ -108,6 +108,7 @@ describe('admin observability API', () => {
     const detail = JSON.parse((await request(new URL(`/api/v1/requests/${secondId}`, admin), { headers })).body.toString()) as Record<string, unknown>;
     expect(detail.parent_request_id).toBe(firstId);
     expect(detail.raw_state).toBe('retained');
+    expect(detail.raw_download_enabled).toBe(true);
     expect(Array.isArray(detail.occurrences)).toBe(true);
     const transcriptResult = await request(new URL(`/api/v1/requests/${secondId}/transcript`, admin), { headers });
     const transcript = JSON.parse(transcriptResult.body.toString()) as { tailId: string; items: unknown[] };

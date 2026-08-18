@@ -125,6 +125,7 @@ export function createAdminApi(dependencies: AdminDependencies) {
         if (!detail) { json(response, 404, { error: { code: 'request_not_found' } }); return true; }
         const retained = raw ? (await raw.retainedStates([requestId])).get(requestId) : undefined;
         detail.raw_state = rawState(detail.raw_capture_state, retained, dependencies.config.raw !== null);
+        detail.raw_download_enabled = dependencies.config.rawDownloadEnabled;
         json(response, 200, detail);
         return true;
       }

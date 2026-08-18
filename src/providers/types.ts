@@ -11,11 +11,18 @@ export interface ProviderUsage {
   raw?: unknown;
 }
 
+export interface ParsedProviderItemMetadata {
+  providerType?: string;
+  providerItemId?: string;
+  providerMetadata?: unknown;
+}
+
 export interface ParsedProviderRequest {
   provider: Provider;
   model?: string;
   streaming: boolean;
   items: CanonicalItem[];
+  itemMetadata?: ParsedProviderItemMetadata[];
   previousResponseId?: string;
   providerConversationId?: string;
   providerMetadata?: unknown;
@@ -27,6 +34,7 @@ export interface ParsedProviderResponse {
   providerResponseId?: string;
   providerConversationId?: string;
   items: CanonicalItem[];
+  itemMetadata?: ParsedProviderItemMetadata[];
   usage?: ProviderUsage;
   status?: string;
   stopReason?: string;

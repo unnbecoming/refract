@@ -22,12 +22,23 @@ describe('OpenAI Responses adapter', () => {
     expect(parsed.providerConversationId).toBe('conv_1');
     expect(parsed.items.map((item) => item.kind)).toEqual(['message', 'message', 'tool_result']);
     expect(parsed.items[2]).toEqual({ schemaVersion: 1, kind: 'tool_result', callKey: 'call_old', content: [{ type: 'text', text: 'done' }] });
+    expect(parsed.itemMetadata).toEqual([
+      { providerType: 'instructions' },
+      { providerType: 'message' },
+      { providerType: 'function_call_output' },
+    ]);
   });
 
   test('streaming terminal response and non-streaming response produce matching canonical output and usage', () => {
     const complete = parseOpenAIResponsesResponse(fixture.response);
     const streamed = streaming(fixture.events);
     expect(streamed.items).toEqual(complete.items);
+    expect(streamed.itemMetadata).toEqual(complete.itemMetadata);
+    expect(complete.itemMetadata).toEqual([
+      { providerType: 'reasoning', providerItemId: 'rs_1' },
+      { providerType: 'message', providerItemId: 'msg_1' },
+      { providerType: 'function_call', providerItemId: 'fc_1' },
+    ]);
     expect(streamed.providerResponseId).toBe('resp_1');
     expect(streamed.providerConversationId).toBe('conv_1');
     expect(streamed.status).toBe('completed');

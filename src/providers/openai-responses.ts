@@ -1,6 +1,6 @@
 import type { CanonicalItem, CanonicalPart } from '../canonical/types.js';
 import { asBoolean, asNumber, asString, compactDefined, isRecord, message, parseJsonBody, unknownItem, unknownPart } from './common.js';
-import type { ParsedProviderRequest, ParsedProviderResponse, ProviderStreamParser, ProviderUsage } from './types.js';
+import type { ParsedProviderItemMetadata, ParsedProviderRequest, ParsedProviderResponse, ProviderStreamParser, ProviderUsage } from './types.js';
 import type { SseEvent } from './sse-decoder.js';
 
 function responseContentParts(value: unknown): CanonicalPart[] {
@@ -90,6 +90,22 @@ function responseItem(value: unknown): CanonicalItem[] {
   return [unknownItem('openai', type, value)];
 }
 
+function appendResponseItem(items: CanonicalItem[], metadata: ParsedProviderItemMetadata[], value: unknown): void {
+  const providerType = isRecord(value) ? asString(value.type) ?? 'unknown' : 'invalid_response_item';
+  const providerItemId = isRecord(value) ? asString(value.id) : undefined;
+  for (const item of responseItem(value)) {
+    items.push(item);
+    const occurrence: ParsedProviderItemMetadata = { providerType };
+    if (providerItemId) occurrence.providerItemId = providerItemId;
+    metadata.push(occurrence);
+  }
+}
+
+function appendSyntheticItem(items: CanonicalItem[], metadata: ParsedProviderItemMetadata[], item: CanonicalItem, providerType: string): void {
+  items.push(item);
+  metadata.push({ providerType });
+}
+
 function usage(value: unknown): ProviderUsage | undefined {
   if (!isRecord(value)) return undefined;
   const result: ProviderUsage = { raw: value };
@@ -115,15 +131,17 @@ export function parseOpenAIResponsesRequest(body: unknown): ParsedProviderReques
   const value = parseJsonBody(body);
   if (!isRecord(value)) throw new Error('OpenAI Responses request must be a JSON object');
   const items: CanonicalItem[] = [];
-  if (typeof value.instructions === 'string') items.push(message('developer', [{ type: 'text', text: value.instructions }]));
-  else if (value.instructions !== undefined && value.instructions !== null) items.push(...responseItem(value.instructions));
-  if (typeof value.input === 'string') items.push(message('user', [{ type: 'text', text: value.input }]));
-  else if (Array.isArray(value.input)) for (const item of value.input as unknown[]) items.push(...responseItem(item));
-  else if (value.input !== undefined) items.push(unknownItem('openai', 'responses_input', value.input));
+  const itemMetadata: ParsedProviderItemMetadata[] = [];
+  if (typeof value.instructions === 'string') appendSyntheticItem(items, itemMetadata, message('developer', [{ type: 'text', text: value.instructions }]), 'instructions');
+  else if (value.instructions !== undefined && value.instructions !== null) appendResponseItem(items, itemMetadata, value.instructions);
+  if (typeof value.input === 'string') appendSyntheticItem(items, itemMetadata, message('user', [{ type: 'text', text: value.input }]), 'input_text');
+  else if (Array.isArray(value.input)) for (const item of value.input as unknown[]) appendResponseItem(items, itemMetadata, item);
+  else if (value.input !== undefined) appendSyntheticItem(items, itemMetadata, unknownItem('openai', 'responses_input', value.input), 'responses_input');
   const result: ParsedProviderRequest = {
     provider: 'openai',
     streaming: asBoolean(value.stream) === true,
     items,
+    itemMetadata,
     providerMetadata: compactDefined({ tools: value.tools, tool_choice: value.tool_choice, text: value.text, reasoning: value.reasoning, include: value.include, truncation: value.truncation }),
   };
   const model = asString(value.model);
@@ -139,10 +157,12 @@ export function parseOpenAIResponsesResponse(body: unknown): ParsedProviderRespo
   const value = parseJsonBody(body);
   if (!isRecord(value)) throw new Error('OpenAI Responses response must be a JSON object');
   const items: CanonicalItem[] = [];
-  if (Array.isArray(value.output)) for (const item of value.output as unknown[]) items.push(...responseItem(item));
+  const itemMetadata: ParsedProviderItemMetadata[] = [];
+  if (Array.isArray(value.output)) for (const item of value.output as unknown[]) appendResponseItem(items, itemMetadata, item);
   const result: ParsedProviderResponse = {
     provider: 'openai',
     items,
+    itemMetadata,
     warnings: [],
     providerMetadata: compactDefined({ object: value.object, error: value.error, incomplete_details: value.incomplete_details, parallel_tool_calls: value.parallel_tool_calls }),
   };

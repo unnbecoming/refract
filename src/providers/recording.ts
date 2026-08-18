@@ -117,6 +117,16 @@ async function ancestry(durable: DurableStore, parsed: ParsedProviderRequest): P
   return { baseTailId: found.outputTailId, parentRequestId: found.requestId, lineageSource: reference.source };
 }
 
+function occurrences(parsed: Pick<ParsedProviderRequest | ParsedProviderResponse, 'items' | 'itemMetadata'>): CanonicalExchange['input'] {
+  return parsed.items.map((item, index) => {
+    const metadata = parsed.itemMetadata?.[index];
+    const occurrence: CanonicalExchange['input'][number] = { item, providerType: metadata?.providerType ?? item.kind };
+    if (metadata?.providerItemId) occurrence.providerItemId = metadata.providerItemId;
+    if (metadata?.providerMetadata !== undefined) occurrence.providerMetadata = metadata.providerMetadata;
+    return occurrence;
+  });
+}
+
 async function persistParsed(input: {
   durable: DurableStore;
   request: RequestMetadata;
@@ -144,8 +154,8 @@ async function persistParsed(input: {
     requestBytes: input.requestBytes,
     responseBytes: input.responseBytes,
     baseTailId: lineage.baseTailId,
-    input: input.requestParsed.items.map((item) => ({ item, providerType: item.kind })),
-    output: input.responseParsed.items.map((item) => ({ item, providerType: item.kind })),
+    input: occurrences(input.requestParsed),
+    output: occurrences(input.responseParsed),
     rawCaptureState: input.rawCaptureState,
     knownSecrets: input.knownSecrets,
   };

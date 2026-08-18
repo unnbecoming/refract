@@ -56,7 +56,7 @@ describe('live canonical recording and replay', () => {
         object: 'response',
         model: 'gpt-example',
         status: 'completed',
-        output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: call === 1 ? 'one' : 'two', annotations: [] }] }],
+        output: [{ type: 'message', id: `msg_${call}`, role: 'assistant', content: [{ type: 'output_text', text: call === 1 ? 'one' : 'two', annotations: [] }] }],
         usage: { input_tokens: call * 2, output_tokens: call },
       }));
       response.writeHead(200, { 'content-type': 'application/json', 'content-length': String(body.length) });
@@ -80,6 +80,11 @@ describe('live canonical recording and replay', () => {
       return row?.parse_status === 'parsed' ? row : undefined;
     });
     expect(firstRow.provider_response_id).toBe('resp_1');
+    const firstDetail = await proxy.durable?.requestDetail(firstId);
+    expect(firstDetail?.occurrences).toEqual([
+      expect.objectContaining({ phase: 'input', ordinal: 0, provider_type: 'input_text', provider_item_id: null }),
+      expect.objectContaining({ phase: 'output', ordinal: 0, provider_type: 'message', provider_item_id: 'msg_1' }),
+    ]);
 
     const secondBody = Buffer.from(JSON.stringify({ model: 'gpt-example', previous_response_id: 'resp_1', input: 'second' }));
     const second = await request(new URL('/v1/responses', base), { method: 'POST', headers: { 'content-type': 'application/json' }, body: secondBody });
@@ -102,7 +107,12 @@ describe('live canonical recording and replay', () => {
     await replayRetainedRaw({ requestId: secondId, durable: proxy.durable!, raw: proxy.raw!, maximumBodyBytes: config.parserMaxBodyBytes, knownSecrets: [config.credentials.openai.secretValue] });
     await replayRetainedRaw({ requestId: secondId, durable: proxy.durable!, raw: proxy.raw!, maximumBodyBytes: config.parserMaxBodyBytes, knownSecrets: [config.credentials.openai.secretValue] });
     expect(await proxy.durable?.counts()).toEqual(before);
-    expect((await proxy.durable?.getRequest(secondId))?.output_tail_id).toEqual(secondRow.output_tail_id);
+    const replayed = await proxy.durable?.requestDetail(secondId);
+    expect(replayed?.output_tail_id).toBe((secondRow.output_tail_id as Buffer).toString('hex'));
+    expect(replayed?.occurrences).toEqual([
+      expect.objectContaining({ phase: 'input', ordinal: 0, provider_type: 'input_text', provider_item_id: null }),
+      expect.objectContaining({ phase: 'output', ordinal: 0, provider_type: 'message', provider_item_id: 'msg_2' }),
+    ]);
   });
 
   test('canonicalizes encoded responses without changing downstream or raw bytes', async () => {

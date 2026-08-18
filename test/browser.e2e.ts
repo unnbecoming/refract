@@ -27,8 +27,9 @@ test('live request, transcript, filters, raw expiry, responsive layout, and reco
   await page.getByRole('link', { name: 'Requests', exact: true }).click();
   await page.getByRole('listitem').first().click();
   await page.getByRole('tab', { name: 'Raw opt-in' }).click();
-  await page.getByRole('button', { name: 'Open raw inspector' }).click();
-  await expect(page.getByRole('alert')).toContainText('raw_expired');
+  await expect(page.getByRole('heading', { name: 'Raw inspector unavailable' })).toBeVisible();
+  await expect(page.getByText(/expired or is no longer retained/i)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Open raw inspector' })).toHaveCount(0);
   await page.getByRole('tab', { name: 'Transcript' }).click();
   await expect(page.getByText('browser answer 1')).toBeVisible();
 
