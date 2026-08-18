@@ -19,6 +19,7 @@ export function testConfig(origin: URL, adminToken: Buffer | null = null): Refra
       openai: { headerName: 'authorization', wireValue: 'Bearer openai-test-secret', secretValue: Buffer.from('openai-test-secret') },
     },
     sensitiveHeaders: [],
+    durablePath: ':memory:',
     raw: null,
     timeouts: { upstreamHeadersMs: 1_000, upstreamIdleMs: 1_000, shutdownGraceMs: 1_000 },
   };

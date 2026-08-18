@@ -6,6 +6,8 @@ Provider credentials must be mounted as read-only files and named by `ANTHROPIC_
 
 Credential, cookie, and `SENSITIVE_HEADER_NAMES` values are redacted before any raw-storage queue. Known credential values are also scanned across body chunk boundaries. If one appears in a body, forwarding remains byte-exact but the raw exchange is deleted and marked `dropped_secret`. Credential protection outranks exact recording.
 
-Raw bodies may contain other application secrets and are sensitive even after header redaction. They live only in the separate short-retention raw database. Durable canonical storage is not implemented yet.
+Raw bodies may contain other application secrets and are sensitive even after header redaction. They live only in the separate short-retention raw database.
+
+Canonical request and response content is permanent sensitive data in `DURABLE_DB_PATH`. Known credential values are recursively scrubbed before canonical hashing, including inside unknown provider payloads, but ordinary user/application content is intentionally retained. Back up and expose this database accordingly. It has one fresh schema marker and no migration/import path; an unknown or missing marker fails closed.
 
 The admin listener defaults to loopback. A non-loopback bind requires `ADMIN_TOKEN_FILE`; health probes remain unauthenticated. Do not expose the current transport-state API without TLS and an external network boundary.

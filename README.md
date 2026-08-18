@@ -10,6 +10,8 @@ Phase 1 transport is implemented for the three fixed provider paths. It preserve
 
 Phase 2 adds proxy-owned provider credentials and bounded raw capture. Caller authorization is stripped, the matched provider key is injected from a boot-read file, and all observation headers are redacted before storage. Exact body chunks live only in a separate short-retention SQLite database; secret-contaminated, oversize, or pressure-limited captures are dropped and labeled without changing forwarded traffic.
 
+Phase 3 adds the permanent provider-neutral context DAG: canonical JSON, domain-separated item/node hashes, zstd item storage with collision guards, immutable prefix reuse and branching, request tails and occurrences, explicit provider-object ancestry, restart recovery, and transcript reconstruction independent of raw capture. Provider wire-format adapters are the next phase.
+
 ## Run
 
 ```bash
@@ -17,6 +19,7 @@ ANTHROPIC_ORIGIN=https://api.anthropic.com \\
 OPENAI_ORIGIN=https://api.openai.com \\
 ANTHROPIC_API_KEY_FILE=/run/secrets/refract/anthropic \\
 OPENAI_API_KEY_FILE=/run/secrets/refract/openai \\
+DURABLE_DB_PATH=/var/lib/refract/observability.db \
 RAW_DB_PATH=/var/cache/refract/raw.db \\
 npm run build && npm start
 ```

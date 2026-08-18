@@ -10,6 +10,24 @@ export interface PreparedRequestHeaders {
   knownSecrets: Buffer[];
 }
 
+export function scrubKnownSecrets<T>(value: T, knownSecrets: readonly Buffer[]): T {
+  const secrets = knownSecrets.filter((secret) => secret.length >= 4).map((secret) => secret.toString());
+  const seen = new WeakSet<object>();
+  const scrub = (current: unknown): unknown => {
+    if (typeof current === 'string') {
+      return secrets.reduce((text, secret) => text.split(secret).join('[REDACTED]'), current);
+    }
+    if (current === null || typeof current !== 'object') return current;
+    if (seen.has(current)) throw new Error('cannot canonicalize cyclic content');
+    seen.add(current);
+    if (Array.isArray(current)) return current.map(scrub);
+    const output: Record<string, unknown> = {};
+    for (const [key, entry] of Object.entries(current)) output[key] = scrub(entry);
+    return output;
+  };
+  return scrub(value) as T;
+}
+
 function secretVariants(value: string): Buffer[] {
   const variants = [value];
   const bearer = /^Bearer\s+(.+)$/i.exec(value);

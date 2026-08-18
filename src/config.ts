@@ -45,6 +45,7 @@ export interface RefractConfig {
   upstreams: UpstreamConfig;
   credentials: Record<Provider, CredentialConfig>;
   sensitiveHeaders: string[];
+  durablePath: string;
   raw: RawCaptureConfig | null;
   timeouts: TimeoutConfig;
 }
@@ -63,6 +64,7 @@ const environment = z.object({
   ANTHROPIC_API_KEY_FILE: z.string().min(1),
   OPENAI_API_KEY_FILE: z.string().min(1),
   SENSITIVE_HEADER_NAMES: z.string().default(''),
+  DURABLE_DB_PATH: z.string().min(1).default('/var/lib/refract/observability.db'),
   RAW_CAPTURE_ENABLED: z.enum(['true', 'false']).default('true'),
   RAW_DB_PATH: z.string().min(1).default('/var/cache/refract/raw.db'),
   RAW_RETENTION_HOURS: z.coerce.number().positive().default(168),
@@ -125,6 +127,7 @@ export function loadConfig(source: NodeJS.ProcessEnv = process.env): RefractConf
       openai: { headerName: 'authorization', wireValue: `Bearer ${openaiSecret.toString()}`, secretValue: openaiSecret },
     },
     sensitiveHeaders: [...new Set(parsed.SENSITIVE_HEADER_NAMES.split(',').map((name) => name.trim().toLowerCase()).filter(Boolean))],
+    durablePath: parsed.DURABLE_DB_PATH,
     raw: parsed.RAW_CAPTURE_ENABLED === 'false' ? null : {
       path: parsed.RAW_DB_PATH,
       retentionHours: parsed.RAW_RETENTION_HOURS,

@@ -33,6 +33,7 @@ describe('configuration', () => {
       expect(config.credentials.anthropic.wireValue).toBe('anthropic-file-secret');
       expect(config.credentials.openai.wireValue).toBe('Bearer openai-file-secret');
       expect(config.sensitiveHeaders).toEqual(['x-tenant-token', 'x-extra-secret']);
+      expect(config.durablePath).toBe('/var/lib/refract/observability.db');
       expect(config.raw).toMatchObject({ retentionHours: 168, blockBytes: 256 * 1024, maxQueuedWrites: 256 });
     } finally {
       fixture.cleanup();
