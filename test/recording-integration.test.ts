@@ -2,6 +2,7 @@ import * as fs from 'node:fs';
 import * as http from 'node:http';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import * as zlib from 'node:zlib';
 import { afterEach, describe, expect, test } from 'vitest';
 import { createRefractServer, type RefractServer } from '../src/proxy/server.js';
 import { replayRetainedRaw } from '../src/providers/recording.js';
@@ -102,6 +103,76 @@ describe('live canonical recording and replay', () => {
     await replayRetainedRaw({ requestId: secondId, durable: proxy.durable!, raw: proxy.raw!, maximumBodyBytes: config.parserMaxBodyBytes, knownSecrets: [config.credentials.openai.secretValue] });
     expect(await proxy.durable?.counts()).toEqual(before);
     expect((await proxy.durable?.getRequest(secondId))?.output_tail_id).toEqual(secondRow.output_tail_id);
+  });
+
+  test('canonicalizes encoded responses without changing downstream or raw bytes', async () => {
+    const body = Buffer.from(JSON.stringify({
+      id: 'chat_encoded', object: 'chat.completion', model: 'gpt-example',
+      choices: [{ index: 0, message: { role: 'assistant', content: 'encoded answer' }, finish_reason: 'stop' }],
+      usage: { prompt_tokens: 2, completion_tokens: 2 },
+    }));
+    const encoders = [
+      ['gzip', (value: Buffer) => zlib.gzipSync(value)],
+      ['br', (value: Buffer) => zlib.brotliCompressSync(value)],
+      ['deflate', (value: Buffer) => zlib.deflateSync(value)],
+    ] as const;
+    for (const [encoding, encode] of encoders) {
+      const wire = encode(body);
+      const upstream = http.createServer((_incoming, response) => {
+        response.writeHead(200, { 'content-type': 'application/json', 'content-encoding': encoding, 'content-length': String(wire.length) });
+        response.end(wire);
+      });
+      servers.push(upstream);
+      const origin = await listen(upstream);
+      const directory = temporaryDirectory();
+      const config = rawEnabledConfig(origin, directory);
+      const proxy = createRefractServer(config);
+      proxies.push(proxy);
+      const addresses = await proxy.start();
+      const requestBody = Buffer.from(JSON.stringify({ model: 'gpt-example', messages: [{ role: 'user', content: 'hello' }] }));
+      const result = await request(new URL('/v1/chat/completions', `http://127.0.0.1:${addresses.data.port}`), { method: 'POST', body: requestBody });
+      expect(result.body).toEqual(wire);
+      const headers = new Map(Array.from({ length: result.rawHeaders.length / 2 }, (_, index) => [result.rawHeaders[index * 2]!.toLowerCase(), result.rawHeaders[index * 2 + 1]!]));
+      expect(headers.get('content-encoding')).toBe(encoding);
+      const id = proxy.lifecycle.snapshot().recent[0]?.id ?? '';
+      const row = await eventually(async () => {
+        const current = await proxy.durable?.getRequest(id);
+        return current?.parse_status === 'parsed' ? current : undefined;
+      });
+      expect(await proxy.durable?.transcript(row.output_tail_id as Buffer)).toEqual([
+        { schemaVersion: 1, kind: 'message', role: 'user', content: [{ type: 'text', text: 'hello' }] },
+        { schemaVersion: 1, kind: 'message', role: 'assistant', content: [{ type: 'text', text: 'encoded answer' }] },
+      ]);
+      expect(await proxy.raw?.reconstruct(id, 'response')).toEqual(wire);
+      const before = await proxy.durable?.counts();
+      await replayRetainedRaw({ requestId: id, durable: proxy.durable!, raw: proxy.raw!, maximumBodyBytes: config.parserMaxBodyBytes, knownSecrets: [config.credentials.openai.secretValue] });
+      expect(await proxy.durable?.counts()).toEqual(before);
+    }
+  });
+
+  test('bounds decoded observer bodies without changing compressed downstream bytes', async () => {
+    const body = Buffer.from(JSON.stringify({ id: 'resp_compressed_large', output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'x'.repeat(512) }] }] }));
+    const wire = zlib.gzipSync(body);
+    expect(wire.length).toBeLessThan(128);
+    const upstream = http.createServer((_incoming, response) => {
+      response.writeHead(200, { 'content-type': 'application/json', 'content-encoding': 'gzip', 'content-length': String(wire.length) });
+      response.end(wire);
+    });
+    servers.push(upstream);
+    const origin = await listen(upstream);
+    const config = testConfig(origin);
+    config.parserMaxBodyBytes = 128;
+    const proxy = createRefractServer(config);
+    proxies.push(proxy);
+    const addresses = await proxy.start();
+    const result = await request(new URL('/v1/responses', `http://127.0.0.1:${addresses.data.port}`), { method: 'POST', body: Buffer.from('{"input":"ok"}') });
+    expect(result.body).toEqual(wire);
+    const id = proxy.lifecycle.snapshot().recent[0]?.id ?? '';
+    const row = await eventually(async () => {
+      const current = await proxy.durable?.getRequest(id);
+      return current?.parse_status === 'failed' ? current : undefined;
+    });
+    expect(row.parse_error_code).toBe('body_limit');
   });
 
   test('records and idempotently replays a streaming Chat response', async () => {

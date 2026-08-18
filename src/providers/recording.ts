@@ -1,3 +1,4 @@
+import * as zlib from 'node:zlib';
 import type { ApiSurface, Provider } from '../config.js';
 import type { HeaderPair } from '../proxy/headers.js';
 import { SseDecoder } from './sse-decoder.js';
@@ -74,6 +75,32 @@ function parseSse(surface: ApiSurface, body: Buffer): ParsedProviderResponse {
   return parser.finish();
 }
 
+function responseContentEncodings(headers: readonly HeaderPair[]): string[] {
+  return headers
+    .filter(([name]) => name.toLowerCase() === 'content-encoding')
+    .flatMap(([, value]) => value.split(','))
+    .map((value) => value.trim().toLowerCase())
+    .filter((value) => value !== '' && value !== 'identity');
+}
+
+function decodeObserverResponse(body: Buffer, headers: readonly HeaderPair[], maximumBodyBytes: number): Buffer {
+  let decoded = body;
+  for (const encoding of responseContentEncodings(headers).reverse()) {
+    try {
+      const options = { maxOutputLength: maximumBodyBytes };
+      if (encoding === 'gzip' || encoding === 'x-gzip') decoded = zlib.gunzipSync(decoded, options);
+      else if (encoding === 'deflate') decoded = zlib.inflateSync(decoded, options);
+      else if (encoding === 'br') decoded = zlib.brotliDecompressSync(decoded, options);
+      else throw new Error('unsupported_content_encoding');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ERR_BUFFER_TOO_LARGE') throw new Error('observer_body_limit');
+      throw error;
+    }
+    if (decoded.length > maximumBodyBytes) throw new Error('observer_body_limit');
+  }
+  return decoded;
+}
+
 async function ancestry(durable: DurableStore, parsed: ParsedProviderRequest): Promise<{
   baseTailId: Buffer | null;
   parentRequestId?: string;
@@ -144,6 +171,8 @@ export class ExchangeObservation {
   #finished = false;
   #status = 0;
   #ttfbMs = 0;
+  #responseHeaders: HeaderPair[] = [];
+  #isSse = false;
 
   constructor(input: ExchangeObservationInput) {
     this.#input = input;
@@ -161,8 +190,10 @@ export class ExchangeObservation {
   responseStarted(status: number, headers: readonly HeaderPair[], ttfbMs: number): void {
     this.#status = status;
     this.#ttfbMs = ttfbMs;
+    this.#responseHeaders = headers.map(([name, value]) => [name, value]);
     const contentType = headers.find(([name]) => name.toLowerCase() === 'content-type')?.[1].toLowerCase() ?? '';
-    if (contentType.includes('text/event-stream')) {
+    this.#isSse = contentType.includes('text/event-stream');
+    if (this.#isSse && responseContentEncodings(headers).length === 0) {
       this.#streamParser = createProviderStreamParser(this.#input.surface);
       this.#sseDecoder = new SseDecoder((event) => this.#streamParser?.push(event));
     }
@@ -210,12 +241,13 @@ export class ExchangeObservation {
     try {
       if (this.#requestBody.overflow || this.#responseBody.overflow) throw new Error('observer_body_limit');
       const requestParsed = parseProviderRequest(this.#input.surface, this.#requestBody.body());
+      const responseBody = decodeObserverResponse(this.#responseBody.body(), this.#responseHeaders, this.#input.maximumBodyBytes);
       let responseParsed: ParsedProviderResponse;
       if (this.#sseDecoder && this.#streamParser) {
         if (this.#parseFailed) throw new Error('invalid_sse');
         this.#sseDecoder.finish();
         responseParsed = this.#streamParser.finish();
-      } else responseParsed = parseProviderResponse(this.#input.surface, this.#responseBody.body());
+      } else responseParsed = this.#isSse ? parseSse(this.#input.surface, responseBody) : parseProviderResponse(this.#input.surface, responseBody);
       const captureState = await rawState(this.#input.request.id, this.#input.raw());
       await persistParsed({
         durable,
@@ -259,16 +291,17 @@ export async function replayRetainedRaw(input: {
 }): Promise<void> {
   const row = await input.durable.getRequest(input.requestId);
   if (!row) throw new Error('request_not_found');
-  const rawRow = await input.raw.getExchange(input.requestId);
+  const rawRow = await input.raw.manifest(input.requestId);
   if (!rawRow || rawRow.capture_state !== 'complete' || rawRow.request_complete !== 1 || rawRow.response_complete !== 1) throw new Error('raw_capture_not_complete');
   if (rawRow.request_bytes > input.maximumBodyBytes || rawRow.response_bytes > input.maximumBodyBytes) throw new Error('observer_body_limit');
   const surface = safeSurface(row.api_surface);
   const provider = safeProvider(row.provider);
   const requestBytes = await input.raw.reconstruct(input.requestId, 'request');
   const responseBytes = await input.raw.reconstruct(input.requestId, 'response');
+  const observedResponse = decodeObserverResponse(responseBytes, rawRow.responseHeaders, input.maximumBodyBytes);
   const requestParsed = parseProviderRequest(surface, requestBytes);
-  const trimmed = responseBytes.subarray(0, Math.min(responseBytes.length, 64)).toString('utf8').trimStart();
-  const responseParsed = requestParsed.streaming && !trimmed.startsWith('{') ? parseSse(surface, responseBytes) : parseProviderResponse(surface, responseBytes);
+  const trimmed = observedResponse.subarray(0, Math.min(observedResponse.length, 64)).toString('utf8').trimStart();
+  const responseParsed = requestParsed.streaming && !trimmed.startsWith('{') ? parseSse(surface, observedResponse) : parseProviderResponse(surface, observedResponse);
   const request: RequestMetadata = {
     id: input.requestId,
     startedAtMs: typeof row.started_at_ms === 'number' ? row.started_at_ms : Date.now(),
