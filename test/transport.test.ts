@@ -53,6 +53,8 @@ describe('fixed-route transport', () => {
         method: 'POST',
         headers: [
           'Host', 'caller.invalid',
+          'Authorization', 'Bearer caller-placeholder',
+          'X-Api-Key', 'caller-api-placeholder',
           'Content-Type', 'application/json',
           'Content-Encoding', 'gzip',
           'Content-Length', String(body.length),
@@ -78,6 +80,15 @@ describe('fixed-route transport', () => {
       expect(values(exchange.rawHeaders, 'x-duplicate')).toEqual(['request-one', 'request-two']);
       expect(values(exchange.rawHeaders, 'x-remove-request')).toEqual([]);
       expect(values(exchange.rawHeaders, 'host')).toEqual([origin.host]);
+      if (index === 0) {
+        expect(values(exchange.rawHeaders, 'x-api-key')).toEqual(['anthropic-test-secret']);
+        expect(values(exchange.rawHeaders, 'authorization')).toEqual([]);
+      } else {
+        expect(values(exchange.rawHeaders, 'authorization')).toEqual(['Bearer openai-test-secret']);
+        expect(values(exchange.rawHeaders, 'x-api-key')).toEqual([]);
+      }
+      expect(exchange.rawHeaders.join('\n')).not.toContain('caller-placeholder');
+      expect(exchange.rawHeaders.join('\n')).not.toContain('caller-api-placeholder');
     }
   });
 
@@ -292,7 +303,11 @@ describe('fixed-route transport', () => {
     expect((await request(new URL('/api/v1/transport', base))).status).toBe(401);
     const state = await request(new URL('/api/v1/transport', base), { headers: { authorization: `Bearer ${token.toString()}` } });
     expect(state.status).toBe(200);
-    expect(JSON.parse(state.body.toString())).toEqual({ active: [], recent: [] });
+    expect(JSON.parse(state.body.toString())).toEqual({
+      active: [],
+      recent: [],
+      raw: { enabled: false, available: false, startupFailed: false },
+    });
     expect(addresses.admin.port).not.toBe(addresses.data.port);
   });
 });

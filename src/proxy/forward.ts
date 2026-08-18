@@ -2,6 +2,8 @@ import * as http from 'node:http';
 import * as https from 'node:https';
 import type { OutgoingHttpHeaders } from 'node:http';
 import type { RefractConfig } from '../config.js';
+import { prepareRequestHeaders, sanitizeRawHeaders } from '../credentials/redact.js';
+import type { RawCaptureStore } from '../storage/raw-store.js';
 import { flattenHeaderPairs, stripHopByHopHeaders } from './headers.js';
 import type { LifecycleTracker } from './lifecycle.js';
 import { resolveRoute } from './router.js';
@@ -30,7 +32,7 @@ function safeErrorCode(error: Error & { code?: string }): string {
   return typeof code === 'string' && /^[A-Z0-9_]{1,64}$/.test(code) ? code : 'UPSTREAM_ERROR';
 }
 
-export function createForwarder(config: RefractConfig, lifecycle: LifecycleTracker): Forwarder {
+export function createForwarder(config: RefractConfig, lifecycle: LifecycleTracker, rawStore: () => RawCaptureStore | null = () => null): Forwarder {
   const httpAgent = new http.Agent({ keepAlive: true });
   const httpsAgent = new https.Agent({ keepAlive: true });
 
@@ -49,7 +51,15 @@ export function createForwarder(config: RefractConfig, lifecycle: LifecycleTrack
       const record = lifecycle.accept(route.provider, route.surface);
       const client = route.origin.protocol === 'https:' ? https : http;
       const authority = route.origin.host;
-      const rawHeaders = flattenHeaderPairs(stripHopByHopHeaders(request.rawHeaders, authority));
+      const preparedHeaders = prepareRequestHeaders(request.rawHeaders, authority, config.credentials[route.provider], config.sensitiveHeaders);
+      const rawHeaders = flattenHeaderPairs(preparedHeaders.upstream);
+      const rawCapture = rawStore()?.begin({
+        requestId: record.id,
+        provider: route.provider,
+        requestHeaders: preparedHeaders.observation,
+        knownSecrets: preparedHeaders.knownSecrets,
+        createdAtMs: record.acceptedAtMs,
+      }) ?? null;
       let responseStarted = false;
       let downstreamFinished = false;
       let upstreamResponse: http.IncomingMessage | null = null;
@@ -71,10 +81,14 @@ export function createForwarder(config: RefractConfig, lifecycle: LifecycleTrack
         const status = incoming.statusCode ?? 502;
         lifecycle.transition(record.id, 'response_started', { httpStatus: status, ttfbMs });
         const outgoingHeaders = flattenHeaderPairs(stripHopByHopHeaders(incoming.rawHeaders));
+        rawCapture?.responseStarted(status, sanitizeRawHeaders(incoming.rawHeaders, preparedHeaders.knownSecrets, config.sensitiveHeaders));
         if (incoming.statusMessage) response.writeHead(status, incoming.statusMessage, outgoingHeaders);
         else response.writeHead(status, outgoingHeaders);
 
+        incoming.on('data', (chunk: Buffer) => rawCapture?.observe('response', chunk));
+        incoming.once('end', () => rawCapture?.complete('response'));
         incoming.once('aborted', () => {
+          rawCapture?.partial();
           if (!lifecycle.has(record.id)) return;
           lifecycle.transition(record.id, 'upstream_stream_error', {
             totalMs: lifecycle.elapsed(record.id) ?? 0,
@@ -83,6 +97,7 @@ export function createForwarder(config: RefractConfig, lifecycle: LifecycleTrack
           response.destroy();
         });
         incoming.once('error', (error: Error & { code?: string }) => {
+          rawCapture?.partial();
           if (!lifecycle.has(record.id)) return;
           lifecycle.transition(record.id, 'upstream_stream_error', {
             totalMs: lifecycle.elapsed(record.id) ?? 0,
@@ -93,6 +108,8 @@ export function createForwarder(config: RefractConfig, lifecycle: LifecycleTrack
         incoming.pipe(response);
       });
 
+      request.on('data', (chunk: Buffer) => rawCapture?.observe('request', chunk));
+      request.once('end', () => rawCapture?.complete('request'));
       lifecycle.transition(record.id, 'upstream_started');
       const headersTimer = setTimeout(() => {
         const error = Object.assign(new Error('upstream headers timeout'), { code: 'UPSTREAM_HEADERS_TIMEOUT' });
@@ -107,6 +124,7 @@ export function createForwarder(config: RefractConfig, lifecycle: LifecycleTrack
 
       upstreamRequest.once('error', (error: Error & { code?: string }) => {
         clearTimeout(headersTimer);
+        rawCapture?.partial();
         if (!lifecycle.has(record.id)) return;
         const state = responseStarted ? 'upstream_stream_error' : 'upstream_connect_error';
         lifecycle.transition(record.id, state, {
@@ -117,6 +135,7 @@ export function createForwarder(config: RefractConfig, lifecycle: LifecycleTrack
       });
 
       request.once('aborted', () => {
+        rawCapture?.partial();
         if (!lifecycle.has(record.id)) return;
         lifecycle.transition(record.id, 'downstream_cancelled', {
           totalMs: lifecycle.elapsed(record.id) ?? 0,
@@ -134,6 +153,7 @@ export function createForwarder(config: RefractConfig, lifecycle: LifecycleTrack
 
       response.once('close', () => {
         if (downstreamFinished || !lifecycle.has(record.id)) return;
+        rawCapture?.partial();
         lifecycle.transition(record.id, 'downstream_cancelled', {
           totalMs: lifecycle.elapsed(record.id) ?? 0,
           errorCode: 'DOWNSTREAM_CLOSED',

@@ -4,6 +4,7 @@ import type { AddressInfo } from 'node:net';
 import type { RefractConfig } from '../config.js';
 import { createForwarder } from './forward.js';
 import { LifecycleTracker } from './lifecycle.js';
+import { RawCaptureStore } from '../storage/raw-store.js';
 
 export interface ListenerAddress {
   host: string;
@@ -12,6 +13,7 @@ export interface ListenerAddress {
 
 export interface RefractServer {
   lifecycle: LifecycleTracker;
+  raw: RawCaptureStore | null;
   start(): Promise<{ data: ListenerAddress; admin: ListenerAddress }>;
   close(): Promise<void>;
 }
@@ -59,8 +61,15 @@ function json(response: http.ServerResponse, status: number, value: unknown): vo
 
 export function createRefractServer(config: RefractConfig): RefractServer {
   const lifecycle = new LifecycleTracker();
-  const forwarder = createForwarder(config, lifecycle);
+  let raw: RawCaptureStore | null = null;
+  let rawStartupFailed = false;
+  if (config.raw) {
+    try { raw = new RawCaptureStore(config.raw); }
+    catch { rawStartupFailed = true; }
+  }
+  const forwarder = createForwarder(config, lifecycle, () => raw);
   let closing = false;
+  let pruneTimer: NodeJS.Timeout | null = null;
   const dataServer = http.createServer((request, response) => forwarder.handle(request, response));
   const adminServer = http.createServer((request, response) => {
     const pathname = request.url?.split('?', 1)[0];
@@ -78,7 +87,7 @@ export function createRefractServer(config: RefractConfig): RefractServer {
       return;
     }
     if (request.method === 'GET' && pathname === '/api/v1/transport') {
-      json(response, 200, lifecycle.snapshot());
+      json(response, 200, { ...lifecycle.snapshot(), raw: { enabled: config.raw !== null, available: raw !== null, startupFailed: rawStartupFailed, ...(raw?.stats() ?? {}) } });
       return;
     }
     json(response, 404, { error: { code: 'not_found' } });
@@ -93,10 +102,20 @@ export function createRefractServer(config: RefractConfig): RefractServer {
 
   return {
     lifecycle,
+    get raw() { return raw; },
     async start() {
+      if (raw) {
+        try { await raw.ready(); }
+        catch { raw = null; rawStartupFailed = true; }
+      }
       const data = await listen(dataServer, config.data.host, config.data.port);
       try {
         const admin = await listen(adminServer, config.admin.host, config.admin.port);
+        if (raw && config.raw) {
+          void raw.prune();
+          pruneTimer = setInterval(() => { void raw?.prune(); }, config.raw.pruneIntervalSeconds * 1_000);
+          pruneTimer.unref();
+        }
         return { data, admin };
       } catch (error) {
         await closeServer(dataServer, config.timeouts.shutdownGraceMs);
@@ -105,11 +124,13 @@ export function createRefractServer(config: RefractConfig): RefractServer {
     },
     async close() {
       closing = true;
+      if (pruneTimer) clearInterval(pruneTimer);
       await Promise.all([
         closeServer(dataServer, config.timeouts.shutdownGraceMs),
         closeServer(adminServer, config.timeouts.shutdownGraceMs),
       ]);
       forwarder.destroy();
+      await raw?.close();
     },
   };
 }

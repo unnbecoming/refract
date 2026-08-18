@@ -14,6 +14,12 @@ export function testConfig(origin: URL, adminToken: Buffer | null = null): Refra
     data: { host: '127.0.0.1', port: 0 },
     admin: { host: '127.0.0.1', port: 0, token: adminToken },
     upstreams: { anthropic: origin, openai: origin },
+    credentials: {
+      anthropic: { headerName: 'x-api-key', wireValue: 'anthropic-test-secret', secretValue: Buffer.from('anthropic-test-secret') },
+      openai: { headerName: 'authorization', wireValue: 'Bearer openai-test-secret', secretValue: Buffer.from('openai-test-secret') },
+    },
+    sensitiveHeaders: [],
+    raw: null,
     timeouts: { upstreamHeadersMs: 1_000, upstreamIdleMs: 1_000, shutdownGraceMs: 1_000 },
   };
 }

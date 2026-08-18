@@ -8,13 +8,16 @@ The project is greenfield. It has no predecessor schema, compatibility layer, or
 
 Phase 1 transport is implemented for the three fixed provider paths. It preserves request and response body bytes, query strings, status, duplicate end-to-end headers, content encodings, and streaming order while removing hop-by-hop headers and rewriting authority for fixed configured origins. It includes upstream keep-alive, backpressure, cancellation, timeout handling, in-memory lifecycle state, and separate data/admin listeners.
 
-Provider credential replacement and recording are not implemented yet. Do not place this release in front of real provider credentials.
+Phase 2 adds proxy-owned provider credentials and bounded raw capture. Caller authorization is stripped, the matched provider key is injected from a boot-read file, and all observation headers are redacted before storage. Exact body chunks live only in a separate short-retention SQLite database; secret-contaminated, oversize, or pressure-limited captures are dropped and labeled without changing forwarded traffic.
 
 ## Run
 
 ```bash
 ANTHROPIC_ORIGIN=https://api.anthropic.com \\
 OPENAI_ORIGIN=https://api.openai.com \\
+ANTHROPIC_API_KEY_FILE=/run/secrets/refract/anthropic \\
+OPENAI_API_KEY_FILE=/run/secrets/refract/openai \\
+RAW_DB_PATH=/var/cache/refract/raw.db \\
 npm run build && npm start
 ```
 
@@ -29,4 +32,4 @@ npm ci
 npm run check
 ```
 
-See [ADR 0001](docs/adr/0001-greenfield-boundaries.md) for the load-bearing boundaries.
+See [ADR 0001](docs/adr/0001-greenfield-boundaries.md) for the load-bearing boundaries, [security](docs/security.md) for credential/data handling, and [raw capture operations](docs/operations.md) for retention and limits.
