@@ -45,6 +45,7 @@ export interface RawExchangeRow {
   response_complete: number;
   request_bytes: number;
   response_bytes: number;
+  response_status: number | null;
   request_sha256: Buffer | null;
   response_sha256: Buffer | null;
 }
@@ -96,6 +97,7 @@ export class RawCaptureStore {
     fs.mkdirSync(path.dirname(config.path), { recursive: true });
     const fresh = !fs.existsSync(config.path);
     this.#db = this.#open(config.path, fresh);
+    void this.#db.catch(() => undefined);
   }
 
   async #open(filename: string, fresh: boolean): Promise<Database> {
@@ -186,7 +188,7 @@ export class RawCaptureStore {
     await this.flush();
     const db = await this.#db;
     return db.get<RawExchangeRow>(`SELECT request_id, capture_state, request_complete, response_complete,
-      request_bytes, response_bytes, request_sha256, response_sha256 FROM raw_exchanges WHERE request_id = ?`, requestId);
+      request_bytes, response_bytes, response_status, request_sha256, response_sha256 FROM raw_exchanges WHERE request_id = ?`, requestId);
   }
 
   async prune(nowMs = Date.now()): Promise<{ ageDeleted: number; emergencyDeleted: number }> {

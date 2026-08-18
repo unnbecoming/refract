@@ -20,7 +20,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "check": "npm run typecheck && npm run lint && npm test && npm run build"
+    "check": "npm run typecheck && npm run lint && npm test && npm run build",
+    "replay": "node dist/server/src/replay.js"
   },
   "dependencies": {
     "@mongodb-js/zstd": "^7.0.0",

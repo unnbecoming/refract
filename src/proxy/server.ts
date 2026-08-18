@@ -5,6 +5,7 @@ import type { RefractConfig } from '../config.js';
 import { createForwarder } from './forward.js';
 import { LifecycleTracker } from './lifecycle.js';
 import { RawCaptureStore } from '../storage/raw-store.js';
+import { DurableStore } from '../storage/durable-store.js';
 
 export interface ListenerAddress {
   host: string;
@@ -14,6 +15,7 @@ export interface ListenerAddress {
 export interface RefractServer {
   lifecycle: LifecycleTracker;
   raw: RawCaptureStore | null;
+  durable: DurableStore | null;
   start(): Promise<{ data: ListenerAddress; admin: ListenerAddress }>;
   close(): Promise<void>;
 }
@@ -62,12 +64,15 @@ function json(response: http.ServerResponse, status: number, value: unknown): vo
 export function createRefractServer(config: RefractConfig): RefractServer {
   const lifecycle = new LifecycleTracker();
   let raw: RawCaptureStore | null = null;
+  let durable: DurableStore | null = null;
   let rawStartupFailed = false;
+  let durableStartupFailed = false;
+  let recoveredRequests = 0;
   if (config.raw) {
     try { raw = new RawCaptureStore(config.raw); }
     catch { rawStartupFailed = true; }
   }
-  const forwarder = createForwarder(config, lifecycle, () => raw);
+  const forwarder = createForwarder(config, lifecycle, () => raw, () => durable);
   let closing = false;
   let pruneTimer: NodeJS.Timeout | null = null;
   const dataServer = http.createServer((request, response) => forwarder.handle(request, response));
@@ -87,7 +92,11 @@ export function createRefractServer(config: RefractConfig): RefractServer {
       return;
     }
     if (request.method === 'GET' && pathname === '/api/v1/transport') {
-      json(response, 200, { ...lifecycle.snapshot(), raw: { enabled: config.raw !== null, available: raw !== null, startupFailed: rawStartupFailed, ...(raw?.stats() ?? {}) } });
+      json(response, 200, {
+        ...lifecycle.snapshot(),
+        durable: { available: durable !== null, startupFailed: durableStartupFailed, recoveredRequests },
+        raw: { enabled: config.raw !== null, available: raw !== null, startupFailed: rawStartupFailed, ...(raw?.stats() ?? {}) },
+      });
       return;
     }
     json(response, 404, { error: { code: 'not_found' } });
@@ -103,7 +112,15 @@ export function createRefractServer(config: RefractConfig): RefractServer {
   return {
     lifecycle,
     get raw() { return raw; },
+    get durable() { return durable; },
     async start() {
+      try {
+        durable = await DurableStore.open(config.durablePath);
+        recoveredRequests = await durable.recoverActive();
+      } catch {
+        durable = null;
+        durableStartupFailed = true;
+      }
       if (raw) {
         try { await raw.ready(); }
         catch { raw = null; rawStartupFailed = true; }
@@ -129,8 +146,9 @@ export function createRefractServer(config: RefractConfig): RefractServer {
         closeServer(dataServer, config.timeouts.shutdownGraceMs),
         closeServer(adminServer, config.timeouts.shutdownGraceMs),
       ]);
+      await forwarder.drain();
       forwarder.destroy();
-      await raw?.close();
+      await Promise.all([raw?.close(), durable?.close()]);
     },
   };
 }

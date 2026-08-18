@@ -10,7 +10,9 @@ Phase 1 transport is implemented for the three fixed provider paths. It preserve
 
 Phase 2 adds proxy-owned provider credentials and bounded raw capture. Caller authorization is stripped, the matched provider key is injected from a boot-read file, and all observation headers are redacted before storage. Exact body chunks live only in a separate short-retention SQLite database; secret-contaminated, oversize, or pressure-limited captures are dropped and labeled without changing forwarded traffic.
 
-Phase 3 adds the permanent provider-neutral context DAG: canonical JSON, domain-separated item/node hashes, zstd item storage with collision guards, immutable prefix reuse and branching, request tails and occurrences, explicit provider-object ancestry, restart recovery, and transcript reconstruction independent of raw capture. Provider wire-format adapters are the next phase.
+Phase 3 adds the permanent provider-neutral context DAG: canonical JSON, domain-separated item/node hashes, zstd item storage with collision guards, immutable prefix reuse and branching, request tails and occurrences, explicit provider-object ancestry, restart recovery, and transcript reconstruction independent of raw capture.
+
+Phase 4 adds incremental SSE decoding and canonical adapters for Anthropic Messages, OpenAI Chat Completions, and OpenAI Responses. Streaming and non-streaming calls feed the same durable DAG without owning transport backpressure. Retained complete raw captures can be reparsed idempotently with `npm run replay -- <request-id>` after a build.
 
 ## Run
 

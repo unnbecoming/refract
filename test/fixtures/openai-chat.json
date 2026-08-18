@@ -1,0 +1,178 @@
+{
+  "source": {
+    "url": "https://raw.githubusercontent.com/openai/openai-node/master/src/resources/chat/completions/completions.ts",
+    "note": "fixture authored from official generated OpenAPI types"
+  },
+  "request": {
+    "model": "gpt-example",
+    "stream": true,
+    "messages": [
+      {
+        "role": "developer",
+        "content": "Be concise."
+      },
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "text",
+            "text": "Weather?"
+          },
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": "https://example.test/image.png"
+            }
+          }
+        ]
+      },
+      {
+        "role": "assistant",
+        "content": "Checking.",
+        "tool_calls": [
+          {
+            "id": "call_1",
+            "type": "function",
+            "function": {
+              "name": "weather",
+              "arguments": "{\"city\":\"Paris\"}"
+            }
+          }
+        ]
+      },
+      {
+        "role": "tool",
+        "tool_call_id": "call_1",
+        "content": "sunny"
+      }
+    ]
+  },
+  "response": {
+    "id": "chatcmpl_1",
+    "object": "chat.completion",
+    "model": "gpt-example",
+    "choices": [
+      {
+        "index": 0,
+        "message": {
+          "role": "assistant",
+          "content": "Weather: sunny",
+          "tool_calls": [
+            {
+              "id": "call_2",
+              "type": "function",
+              "function": {
+                "name": "report",
+                "arguments": "{\"ok\":true}"
+              }
+            }
+          ]
+        },
+        "finish_reason": "tool_calls"
+      }
+    ],
+    "usage": {
+      "prompt_tokens": 10,
+      "completion_tokens": 5,
+      "prompt_tokens_details": {
+        "cached_tokens": 3
+      },
+      "completion_tokens_details": {
+        "reasoning_tokens": 2
+      }
+    }
+  },
+  "chunks": [
+    {
+      "id": "chatcmpl_1",
+      "object": "chat.completion.chunk",
+      "model": "gpt-example",
+      "choices": [
+        {
+          "index": 0,
+          "delta": {
+            "role": "assistant",
+            "content": ""
+          },
+          "finish_reason": null
+        }
+      ]
+    },
+    {
+      "id": "chatcmpl_1",
+      "object": "chat.completion.chunk",
+      "model": "gpt-example",
+      "choices": [
+        {
+          "index": 0,
+          "delta": {
+            "content": "Weather: "
+          },
+          "finish_reason": null
+        }
+      ]
+    },
+    {
+      "id": "chatcmpl_1",
+      "object": "chat.completion.chunk",
+      "model": "gpt-example",
+      "choices": [
+        {
+          "index": 0,
+          "delta": {
+            "content": "sunny",
+            "tool_calls": [
+              {
+                "index": 0,
+                "id": "call_2",
+                "type": "function",
+                "function": {
+                  "name": "report",
+                  "arguments": "{\"ok\""
+                }
+              }
+            ]
+          },
+          "finish_reason": null
+        }
+      ]
+    },
+    {
+      "id": "chatcmpl_1",
+      "object": "chat.completion.chunk",
+      "model": "gpt-example",
+      "choices": [
+        {
+          "index": 0,
+          "delta": {
+            "tool_calls": [
+              {
+                "index": 0,
+                "function": {
+                  "arguments": ":true}"
+                }
+              }
+            ]
+          },
+          "finish_reason": "tool_calls"
+        }
+      ]
+    },
+    {
+      "id": "chatcmpl_1",
+      "object": "chat.completion.chunk",
+      "model": "gpt-example",
+      "choices": [],
+      "usage": {
+        "prompt_tokens": 10,
+        "completion_tokens": 5,
+        "prompt_tokens_details": {
+          "cached_tokens": 3
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 2
+        }
+      }
+    }
+  ]
+}

@@ -306,6 +306,7 @@ describe('fixed-route transport', () => {
     expect(JSON.parse(state.body.toString())).toEqual({
       active: [],
       recent: [],
+      durable: { available: true, startupFailed: false, recoveredRequests: 0 },
       raw: { enabled: false, available: false, startupFailed: false },
     });
     expect(addresses.admin.port).not.toBe(addresses.data.port);

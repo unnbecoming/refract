@@ -26,11 +26,27 @@ export interface CanonicalOccurrence {
   providerMetadata?: unknown;
 }
 
+export interface CanonicalUsage {
+  inputTokens?: number;
+  outputTokens?: number;
+  cachedInputTokens?: number;
+  cacheWriteTokens?: number;
+  reasoningTokens?: number;
+  raw?: unknown;
+}
+
 export interface CanonicalExchange {
   request: RequestMetadata;
   completedAtMs: number;
   state: string;
   httpStatus?: number;
+  modelRequested?: string;
+  modelResolved?: string;
+  ttfbMs?: number;
+  totalMs?: number;
+  requestBytes?: number;
+  responseBytes?: number;
+  usage?: CanonicalUsage;
   baseTailId?: Buffer | null;
   input: CanonicalOccurrence[];
   output: CanonicalOccurrence[];
@@ -169,17 +185,30 @@ export class DurableStore {
         VALUES (?, ?, ?, ?, ?, ?, 'accepted', ?)`, exchange.request.id, exchange.request.startedAtMs,
       exchange.request.provider, exchange.request.surface, exchange.request.method, exchange.request.pathAndQuery,
       exchange.request.streamingRequested ? 1 : 0);
+      const scrub = <T>(value: T): T => scrubKnownSecrets(value, knownSecrets);
+      const usageJson = exchange.usage?.raw === undefined ? null : await compress(Buffer.from(JSON.stringify(scrub(exchange.usage.raw))));
       await this.#db.run(`UPDATE requests SET completed_at_ms = ?, state = ?, http_status = ?,
-        input_tail_id = ?, output_tail_id = ?, parent_request_id = ?, lineage_source = ?,
-        provider_response_id = ?, previous_response_id = ?, provider_conversation_id = ?,
-        parse_status = 'parsed', raw_capture_state = ? WHERE id = ?`,
-      exchange.completedAtMs, exchange.state, exchange.httpStatus ?? null, input.tailId, output.tailId,
-      exchange.parentRequestId ?? null, exchange.lineageSource ?? null, exchange.providerResponseId ?? null,
-      exchange.previousResponseId ?? null, exchange.providerConversationId ?? null, exchange.rawCaptureState,
-      exchange.request.id);
+        streaming_requested = ?, model_requested = ?, model_resolved = ?, input_tail_id = ?, output_tail_id = ?,
+        parent_request_id = ?, lineage_source = ?, provider_response_id = ?, previous_response_id = ?,
+        provider_conversation_id = ?, ttfb_ms = ?, total_ms = ?, request_bytes = ?, response_bytes = ?,
+        input_tokens = ?, output_tokens = ?, cached_input_tokens = ?, cache_write_tokens = ?, reasoning_tokens = ?,
+        usage_json_zstd = ?, parse_status = 'parsed', parse_error_code = NULL, parse_error_message = NULL,
+        raw_capture_state = ? WHERE id = ?`,
+      exchange.completedAtMs, exchange.state, exchange.httpStatus ?? null, exchange.request.streamingRequested ? 1 : 0,
+      exchange.modelRequested === undefined ? null : scrub(exchange.modelRequested),
+      exchange.modelResolved === undefined ? null : scrub(exchange.modelResolved), input.tailId, output.tailId,
+      exchange.parentRequestId ?? null, exchange.lineageSource ?? null,
+      exchange.providerResponseId === undefined ? null : scrub(exchange.providerResponseId),
+      exchange.previousResponseId === undefined ? null : scrub(exchange.previousResponseId),
+      exchange.providerConversationId === undefined ? null : scrub(exchange.providerConversationId),
+      exchange.ttfbMs ?? null, exchange.totalMs ?? null, exchange.requestBytes ?? 0, exchange.responseBytes ?? 0,
+      exchange.usage?.inputTokens ?? null, exchange.usage?.outputTokens ?? null,
+      exchange.usage?.cachedInputTokens ?? null, exchange.usage?.cacheWriteTokens ?? null,
+      exchange.usage?.reasoningTokens ?? null, usageJson, exchange.rawCaptureState, exchange.request.id);
+      await this.#db.run('DELETE FROM request_item_occurrences WHERE request_id = ?', exchange.request.id);
       const insertOccurrence = async (phase: 'input' | 'output', values: readonly CanonicalOccurrence[], nodes: readonly Buffer[]) => {
         for (const [ordinal, occurrence] of values.entries()) {
-          const metadata = occurrence.providerMetadata === undefined ? null : await compress(Buffer.from(JSON.stringify(occurrence.providerMetadata)));
+          const metadata = occurrence.providerMetadata === undefined ? null : await compress(Buffer.from(JSON.stringify(scrub(occurrence.providerMetadata))));
           await this.#db.run(`INSERT INTO request_item_occurrences
             (request_id, phase, ordinal, node_id, provider_type, provider_item_id, provider_metadata_zstd)
             VALUES (?, ?, ?, ?, ?, ?, ?)`, exchange.request.id, phase, ordinal, nodes[ordinal],
@@ -190,11 +219,45 @@ export class DurableStore {
       await insertOccurrence('output', exchange.output, output.nodeIds);
       if (exchange.providerResponseId) {
         await this.#db.run(`INSERT INTO provider_objects
-          (provider, object_type, object_id, request_id, output_tail_id) VALUES (?, 'response', ?, ?, ?)`,
-        exchange.request.provider, exchange.providerResponseId, exchange.request.id, output.tailId);
+          (provider, object_type, object_id, request_id, output_tail_id) VALUES (?, 'response', ?, ?, ?)
+          ON CONFLICT(provider, object_type, object_id) DO UPDATE SET request_id = excluded.request_id, output_tail_id = excluded.output_tail_id`,
+        exchange.request.provider, scrub(exchange.providerResponseId), exchange.request.id, output.tailId);
+      }
+      if (exchange.providerConversationId) {
+        await this.#db.run(`INSERT INTO provider_objects
+          (provider, object_type, object_id, request_id, output_tail_id) VALUES (?, 'conversation', ?, ?, ?)
+          ON CONFLICT(provider, object_type, object_id) DO UPDATE SET request_id = excluded.request_id, output_tail_id = excluded.output_tail_id`,
+        exchange.request.provider, scrub(exchange.providerConversationId), exchange.request.id, output.tailId);
       }
       return { inputTailId: input.tailId, outputTailId: output.tailId };
     });
+  }
+
+  async markParseFailure(input: {
+    requestId: string;
+    completedAtMs: number;
+    state: string;
+    httpStatus?: number;
+    errorCode: string;
+    errorMessage: string;
+    ttfbMs?: number;
+    totalMs?: number;
+    requestBytes?: number;
+    responseBytes?: number;
+    rawCaptureState?: string;
+  }): Promise<void> {
+    await this.#serialized(async () => {
+      await this.#db.run(`UPDATE requests SET completed_at_ms = ?, state = ?, http_status = ?,
+        ttfb_ms = ?, total_ms = ?, request_bytes = ?, response_bytes = ?, parse_status = 'failed',
+        parse_error_code = ?, parse_error_message = ?, raw_capture_state = ? WHERE id = ?`,
+      input.completedAtMs, input.state, input.httpStatus ?? null, input.ttfbMs ?? null, input.totalMs ?? null,
+      input.requestBytes ?? 0, input.responseBytes ?? 0, input.errorCode, input.errorMessage.slice(0, 512),
+      input.rawCaptureState ?? 'unavailable', input.requestId);
+    });
+  }
+
+  async getRequest(requestId: string): Promise<Record<string, unknown> | undefined> {
+    return this.#db.get<Record<string, unknown>>('SELECT * FROM requests WHERE id = ?', requestId);
   }
 
   async resolveProviderObject(provider: Provider, objectType: string, objectId: string): Promise<{ requestId: string; outputTailId: Buffer | null } | null> {

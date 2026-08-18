@@ -1,0 +1,283 @@
+{
+  "source": {
+    "url": "https://raw.githubusercontent.com/openai/openai-node/master/src/resources/responses/responses.ts",
+    "note": "fixture authored from official generated OpenAPI event/item unions"
+  },
+  "request": {
+    "model": "gpt-example",
+    "stream": true,
+    "instructions": "Be exact.",
+    "previous_response_id": "resp_previous",
+    "conversation": {
+      "id": "conv_1"
+    },
+    "input": [
+      {
+        "type": "message",
+        "role": "user",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "Continue."
+          }
+        ]
+      },
+      {
+        "type": "function_call_output",
+        "call_id": "call_old",
+        "output": "done"
+      }
+    ]
+  },
+  "response": {
+    "id": "resp_1",
+    "object": "response",
+    "model": "gpt-example",
+    "conversation": {
+      "id": "conv_1"
+    },
+    "status": "completed",
+    "output": [
+      {
+        "type": "reasoning",
+        "id": "rs_1",
+        "summary": [
+          {
+            "type": "summary_text",
+            "text": "brief"
+          }
+        ]
+      },
+      {
+        "type": "message",
+        "id": "msg_1",
+        "role": "assistant",
+        "status": "completed",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "Answer.",
+            "annotations": []
+          }
+        ]
+      },
+      {
+        "type": "function_call",
+        "id": "fc_1",
+        "call_id": "call_1",
+        "name": "finish",
+        "arguments": "{\"ok\":true}",
+        "status": "completed"
+      }
+    ],
+    "usage": {
+      "input_tokens": 12,
+      "output_tokens": 6,
+      "input_tokens_details": {
+        "cached_tokens": 4
+      },
+      "output_tokens_details": {
+        "reasoning_tokens": 2
+      }
+    }
+  },
+  "events": [
+    {
+      "type": "response.created",
+      "sequence_number": 0,
+      "response": {
+        "id": "resp_1",
+        "object": "response",
+        "model": "gpt-example",
+        "conversation": {
+          "id": "conv_1"
+        },
+        "status": "in_progress",
+        "output": []
+      }
+    },
+    {
+      "type": "response.output_item.added",
+      "sequence_number": 1,
+      "output_index": 0,
+      "item": {
+        "type": "reasoning",
+        "id": "rs_1",
+        "summary": []
+      }
+    },
+    {
+      "type": "response.reasoning_summary_text.delta",
+      "sequence_number": 2,
+      "output_index": 0,
+      "summary_index": 0,
+      "delta": "brief"
+    },
+    {
+      "type": "response.output_item.done",
+      "sequence_number": 3,
+      "output_index": 0,
+      "item": {
+        "type": "reasoning",
+        "id": "rs_1",
+        "summary": [
+          {
+            "type": "summary_text",
+            "text": "brief"
+          }
+        ]
+      }
+    },
+    {
+      "type": "response.output_item.added",
+      "sequence_number": 4,
+      "output_index": 1,
+      "item": {
+        "type": "message",
+        "id": "msg_1",
+        "role": "assistant",
+        "status": "in_progress",
+        "content": []
+      }
+    },
+    {
+      "type": "response.content_part.added",
+      "sequence_number": 5,
+      "output_index": 1,
+      "content_index": 0,
+      "part": {
+        "type": "output_text",
+        "text": "",
+        "annotations": []
+      }
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 6,
+      "output_index": 1,
+      "content_index": 0,
+      "delta": "Ans"
+    },
+    {
+      "type": "response.output_text.delta",
+      "sequence_number": 7,
+      "output_index": 1,
+      "content_index": 0,
+      "delta": "wer."
+    },
+    {
+      "type": "response.output_item.done",
+      "sequence_number": 8,
+      "output_index": 1,
+      "item": {
+        "type": "message",
+        "id": "msg_1",
+        "role": "assistant",
+        "status": "completed",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "Answer.",
+            "annotations": []
+          }
+        ]
+      }
+    },
+    {
+      "type": "response.output_item.added",
+      "sequence_number": 9,
+      "output_index": 2,
+      "item": {
+        "type": "function_call",
+        "id": "fc_1",
+        "call_id": "call_1",
+        "name": "finish",
+        "arguments": "",
+        "status": "in_progress"
+      }
+    },
+    {
+      "type": "response.function_call_arguments.delta",
+      "sequence_number": 10,
+      "output_index": 2,
+      "item_id": "fc_1",
+      "delta": "{\"ok\""
+    },
+    {
+      "type": "response.function_call_arguments.delta",
+      "sequence_number": 11,
+      "output_index": 2,
+      "item_id": "fc_1",
+      "delta": ":true}"
+    },
+    {
+      "type": "response.output_item.done",
+      "sequence_number": 12,
+      "output_index": 2,
+      "item": {
+        "type": "function_call",
+        "id": "fc_1",
+        "call_id": "call_1",
+        "name": "finish",
+        "arguments": "{\"ok\":true}",
+        "status": "completed"
+      }
+    },
+    {
+      "type": "response.completed",
+      "sequence_number": 13,
+      "response": {
+        "id": "resp_1",
+        "object": "response",
+        "model": "gpt-example",
+        "conversation": {
+          "id": "conv_1"
+        },
+        "status": "completed",
+        "output": [
+          {
+            "type": "reasoning",
+            "id": "rs_1",
+            "summary": [
+              {
+                "type": "summary_text",
+                "text": "brief"
+              }
+            ]
+          },
+          {
+            "type": "message",
+            "id": "msg_1",
+            "role": "assistant",
+            "status": "completed",
+            "content": [
+              {
+                "type": "output_text",
+                "text": "Answer.",
+                "annotations": []
+              }
+            ]
+          },
+          {
+            "type": "function_call",
+            "id": "fc_1",
+            "call_id": "call_1",
+            "name": "finish",
+            "arguments": "{\"ok\":true}",
+            "status": "completed"
+          }
+        ],
+        "usage": {
+          "input_tokens": 12,
+          "output_tokens": 6,
+          "input_tokens_details": {
+            "cached_tokens": 4
+          },
+          "output_tokens_details": {
+            "reasoning_tokens": 2
+          }
+        }
+      }
+    }
+  ]
+}
