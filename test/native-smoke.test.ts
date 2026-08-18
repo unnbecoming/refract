@@ -1,11 +1,11 @@
 import { compress, decompress } from '@mongodb-js/zstd';
 import Database from 'better-sqlite3';
 import { describe, expect, test } from 'vitest';
-import { buildInfo } from '../src/entrypoint.js';
+import { main } from '../src/entrypoint.js';
 
 describe('phase 0 toolchain', () => {
   test('loads the backend entrypoint', () => {
-    expect(buildInfo()).toEqual({ name: 'refract', phase: 0 });
+    expect(typeof main).toBe('function');
   });
 
   test('loads native SQLite and zstd bindings', async () => {
