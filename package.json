@@ -1,0 +1,61 @@
+{
+  "name": "refract",
+  "version": "0.1.0",
+  "private": false,
+  "type": "module",
+  "description": "A byte-transparent, credential-isolating LLM recording reverse proxy",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22 <25"
+  },
+  "scripts": {
+    "clean": "rm -rf dist coverage",
+    "build:server": "tsc -p tsconfig.server.json",
+    "build:ui": "vite build --config ui/vite.config.ts",
+    "build": "npm run clean && npm run build:server && npm run build:ui",
+    "dev": "tsx src/entrypoint.ts",
+    "typecheck": "tsc -p tsconfig.server.json --noEmit && tsc -p ui/tsconfig.json --noEmit",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
+    "check": "npm run typecheck && npm run lint && npm test && npm run build"
+  },
+  "dependencies": {
+    "@mongodb-js/zstd": "^7.0.0",
+    "@tanstack/react-virtual": "^3.13.12",
+    "better-sqlite3": "^13.0.3",
+    "canonicalize": "^2.1.0",
+    "pino": "^9.9.5",
+    "prom-client": "^15.1.3",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^7.13.1",
+    "ulid": "^3.0.2",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.4",
+    "@playwright/test": "^1.58.2",
+    "@testing-library/jest-dom": "^6.9.1",
+    "@testing-library/react": "^16.3.2",
+    "@testing-library/user-event": "^14.6.1",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^24.10.13",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^5.1.4",
+    "eslint": "^9.39.4",
+    "eslint-plugin-jsx-a11y": "^6.10.2",
+    "eslint-plugin-react-hooks": "^7.0.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "^17.4.0",
+    "jsdom": "^28.1.0",
+    "tsx": "^4.21.0",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.57.0",
+    "vite": "^8.0.0",
+    "vitest": "^4.1.0"
+  }
+}
